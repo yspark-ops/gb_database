@@ -56,9 +56,12 @@ for col in num_cols:
     if col in df.columns:
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
+# 월 정렬을 위한 인덱스 생성
 if '월' in df.columns:
     df['month_idx'] = df['월'].astype(str).str.extract('(\d+)').fillna(0).astype(int)
     df = df.sort_values('month_idx')
+else:
+    df['month_idx'] = 0
 
 # --- 4. 사이드바 필터 ---
 with st.sidebar:
@@ -68,15 +71,22 @@ with st.sidebar:
     if '연도' in df.columns:
         years = sorted(df['연도'].unique(), reverse=True)
         selected_year = st.selectbox("📅 기준 연도", years)
+    else:
+        selected_year = None
     
     if 'CUSTOMER' in df.columns:
         customers = sorted(df['CUSTOMER'].unique())
         selected_customers = st.multiselect("🤝 거래처 선택", customers, default=customers)
+    else:
+        selected_customers = []
 
 # 필터링 적용
 mask = pd.Series(True, index=df.index)
-if '연도' in df.columns: mask &= (df['연도'] == selected_year)
-if 'CUSTOMER' in df.columns: mask &= (df['CUSTOMER'].isin(selected_customers))
+if selected_year:
+    mask &= (df['연도'] == selected_year)
+if selected_customers:
+    mask &= (df['CUSTOMER'].isin(selected_customers))
+
 f_df = df[mask]
 
 # --- 5. 메인 대시보드 UI ---
@@ -91,7 +101,7 @@ with k4: st.markdown(f'<div class="metric-card"><div class="metric-label">거래
 
 st.markdown("---")
 
-# ⭐ 핵심 수정 부분: 그래프 3개를 한 줄(3단 컬럼)로 배치
+# 그래프 3개를 한 줄에 배치 (c1, c2, c3)
 c1, c2, c3 = st.columns(3)
 hince_colors = px.colors.qualitative.Pastel + px.colors.qualitative.Safe
 
@@ -116,25 +126,38 @@ with c2:
             legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5, font=dict(size=10))
         )
         st.plotly_chart(fig_trend, use_container_width=True)
+    else:
+        st.info("Type 정보가 없습니다.")
 
 with c3:
     st.markdown("### ■ 거래처별 비중")
-    fig_pie = px.pie(f_df, values='출고_수량', names='CUSTOMER', hole=0.5, color_discrete_sequence=hince_colors)
-    fig_pie.update_traces(textinfo='percent', textfont_size=10)
-    fig_pie.update_layout(
-        showlegend=True, height=350, margin=dict(t=10, b=10, l=10, r=10),
-        legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5, font=dict(size=10))
-    )
-    st.plotly_chart(fig_pie, use_container_width=True)
+    if 'CUSTOMER' in f_df.columns:
+        fig_pie = px.pie(f_df, values='출고_수량', names='CUSTOMER', hole=0.5, color_discrete_sequence=hince_colors)
+        fig_pie.update_traces(textinfo='percent', textfont_size=10)
+        fig_pie.update_layout(
+            showlegend=True, height=350, margin=dict(t=10, b=10, l=10, r=10),
+            legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5, font=dict(size=10))
+        )
+        st.plotly_chart(fig_pie, use_container_width=True)
 
 st.markdown("---")
 
 # 하단 데이터 내역 (전체 폭 사용)
 st.markdown("### 📋 SS_Master 상세 데이터 내역")
+
+# 보여줄 컬럼 리스트
 cols_to_show = ['월', 'CUSTOMER', 'Type', '출고_수량', '매출액', 'FOC', '결제통화', 'Invoice#']
 available_cols = [c for c in cols_to_show if c in f_df.columns]
-st.dataframe(f_df[available_cols].sort_values(['month_idx']), use_container_width=True, hide_index=True, height=300)
+
+# ⭐ 정렬 에러 해결: 정렬을 먼저 원본(f_df)에서 수행한 후 컬럼을 선택합니다.
+if 'month_idx' in f_df.columns:
+    view_df = f_df.sort_values('month_idx')[available_cols]
+else:
+    view_df = f_df[available_cols]
+
+st.dataframe(view_df, use_container_width=True, hide_index=True, height=300)
 
 # --- 6. 다운로드 버튼 ---
-csv = f_df.to_csv(index=False).encode('utf-8-sig')
-st.download_button(label="📥 데이터 다운로드 (CSV)", data=csv, file_name=f'hince_sales_{selected_year}.csv', mime='text/csv')
+if not f_df.empty:
+    csv = f_df.to_csv(index=False).encode('utf-8-sig')
+    st.download_button(label="📥 데이터 다운로드 (CSV)", data=csv, file_name=f'hince_sales_{selected_year}.csv', mime='text/csv')
