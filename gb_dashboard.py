@@ -120,10 +120,64 @@ hince_colors = px.colors.qualitative.Pastel + px.colors.qualitative.Safe
 
 with si1:
     st.markdown("### ■ 25년 월별 Sell-In 현황")
-    fig_si_monthly = px.bar(f_raw, x='월', y='매출취합용_공급가액(원화기준)', color_discrete_sequence=['#A37F7D'])
-    fig_si_monthly.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title=None, height=330, margin=dict(t=10, b=10, l=10, r=10))
-    st.plotly_chart(fig_si_monthly, use_container_width=True)
+    
+    # 1. 데이터 집계: 월별, 채널별 제품판매수량 합계
+    si_chart_df = f_raw.groupby(['월', 'month_idx', '채널명'])['제품판매수량'].sum().reset_index().sort_values('month_idx')
+    
+    # 2. 누적 막대 그래프 생성
+    fig_si_monthly = px.bar(
+        si_chart_df, 
+        x='월', 
+        y='제품판매수량', 
+        color='채널명',
+        text='제품판매수량', # 막대 안에 적힐 숫자
+        color_discrete_sequence=px.colors.qualitative.Prism # 화려한 색상 팔레트
+    )
+    
+    # 3. 그래프 디테일 설정 (이미지 디자인 재현)
+    fig_si_monthly.update_traces(
+        texttemplate='%{text:,.0f}', # 천단위 콤마 표시
+        textposition='inside',       # 숫자를 막대 안쪽으로
+        insidetextanchor='middle',   # 숫자 위치를 중앙으로
+        textfont=dict(size=10, color="white") # 글자 크기 및 색상
+    )
+    
+    # 막대 상단에 총합 표시를 위한 로직
+    totals = si_chart_df.groupby('월')['제품판매수량'].sum().reset_index()
+    for i, row in totals.iterrows():
+        fig_si_monthly.add_annotation(
+            x=row['월'],
+            y=row['제품판매수량'],
+            text=f"<b>{row['제품판매수량']:,.0f}</b>", # 굵은 글씨 총합
+            showarrow=False,
+            yshift=10, # 막대 위로 살짝 띄움
+            font=dict(size=12, color="#333333")
+        )
 
+    fig_si_monthly.update_layout(
+        plot_bgcolor='rgba(0,0,0,0)',
+        xaxis_title=None,
+        yaxis_title=None,
+        height=450,
+        margin=dict(t=30, b=10, l=10, r=10),
+        barmode='stack',
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.15,
+            xanchor="center",
+            x=0.5,
+            title=None,
+            font=dict(size=10)
+        )
+    )
+    
+    # 격자선 제거 및 스타일 조정
+    fig_si_monthly.update_yaxes(showgrid=True, gridcolor='#EEEEEE', zeroline=False)
+    fig_si_monthly.update_xaxes(showgrid=False)
+    
+    st.plotly_chart(fig_si_monthly, use_container_width=True)
 with si2:
     st.markdown("### ■ 품목별 주요 지표 (대)")
     if '대' in f_raw.columns:
