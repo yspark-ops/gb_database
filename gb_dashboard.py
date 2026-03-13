@@ -32,11 +32,11 @@ local_css()
 
 # --- 2. Supabase 데이터 로드 ---
 def get_supabase_data():
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"] 
+    # Streamlit Cloud의 Secrets에서 정보를 가져옵니다.
     try:
+        url = st.secrets["SUPABASE_URL"]
+        key = st.secrets["SUPABASE_KEY"] 
         supabase: Client = create_client(url, key)
-        # 테이블명을 SS_Master로 지정 (실제 DB 테이블 이름과 대소문자까지 맞춰주세요)
         response = supabase.table("SS_Master").select("*").execute()
         return pd.DataFrame(response.data)
     except Exception as e:
@@ -46,18 +46,23 @@ def get_supabase_data():
 df = get_supabase_data()
 
 if df.empty:
-    st.warning("데이터가 없거나 연결에 실패했습니다.")
+    st.warning("데이터가 없거나 연결에 실패했습니다. Supabase 설정과 테이블 이름을 확인해주세요.")
     st.stop()
 
 # --- 3. 데이터 전처리 ---
 # 숫자형 변환
 num_cols = ["출고_수량", "매출액", "FOC", "발주_수량"]
 for col in num_cols:
-    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+    if col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-# '월' 정렬 (1월, 2월... 순서대로 보이게 처리)
-df['month_idx'] = df['월'].str.extract('(\d+)').astype(int)
-df = df.sort_values('month_idx')
+# '월' 정렬 에러 방지 처리 (핵심 수정 부분)
+# 숫자를 추출하되, 실패할 경우 0으로 채워 정수 변환 시 에러를 막습니다.
+if '월' in df.columns:
+    df['month_idx'] = df['월'].astype(str).str.extract('(\d+)').fillna(0).astype(int)
+    df = df.sort_values('month_idx')
+else:
+    df['month_idx'] = 0
 
 # --- 4. 사이드바 필터 ---
 with st.sidebar:
@@ -65,18 +70,30 @@ with st.sidebar:
     st.markdown("---")
     
     # 연도 필터
-    years = sorted(df['연도'].unique(), reverse=True)
-    selected_year = st.selectbox("📅 기준 연도", years)
+    if '연도' in df.columns:
+        years = sorted(df['연도'].unique(), reverse=True)
+        selected_year = st.selectbox("📅 기준 연도", years)
+    else:
+        selected_year = None
     
     # 거래처 필터
-    customers = sorted(df['CUSTOMER'].unique())
-    selected_customers = st.multiselect("🤝 거래처 선택", customers, default=customers)
+    if 'CUSTOMER' in df.columns:
+        customers = sorted(df['CUSTOMER'].unique())
+        selected_customers = st.multiselect("🤝 거래처 선택", customers, default=customers)
+    else:
+        selected_customers = []
 
 # 필터링 적용
-f_df = df[(df['연도'] == selected_year) & (df['CUSTOMER'].isin(selected_customers))]
+mask = pd.Series(True, index=df.index)
+if selected_year:
+    mask &= (df['연도'] == selected_year)
+if selected_customers:
+    mask &= (df['CUSTOMER'].isin(selected_customers))
+
+f_df = df[mask]
 
 # --- 5. 메인 대시보드 UI ---
-st.title(f"📊 {selected_year} Sales Performance")
+st.title(f"📊 {selected_year if selected_year else ''} Sales Performance")
 st.caption("SS_Master Real-time Analytics Dashboard")
 
 # 상단 KPI 카드
@@ -88,16 +105,15 @@ with k2:
 with k3:
     st.markdown(f'<div class="metric-card"><div class="metric-label">총 FOC</div><div class="metric-value">{f_df["FOC"].sum():,.0f} EA</div></div>', unsafe_allow_html=True)
 with k4:
-    st.markdown(f'<div class="metric-card"><div class="metric-label">거래처 수</div><div class="metric-value">{f_df["CUSTOMER"].nunique()}</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="metric-card"><div class="metric-label">거래처 수</div><div class="metric-value">{f_df["CUSTOMER"].nunique() if "CUSTOMER" in f_df.columns else 0}</div></div>', unsafe_allow_html=True)
 
 st.markdown("---")
 
-# 그래프 섹션 1 (Sell-Out 현황 & 품목별 트렌드)
+# 그래프 섹션 1
 col1, col2 = st.columns(2)
 
 with col1:
     st.markdown("### ■ 거래처별 월별 Sell-Out 현황")
-    # Stacked Bar Chart
     fig_sellout = px.bar(f_df, x='월', y='출고_수량', color='CUSTOMER',
                         text_auto='.2s',
                         color_discrete_sequence=px.colors.qualitative.Pastel)
@@ -109,23 +125,24 @@ with col1:
 
 with col2:
     st.markdown("### ■ 품목별(Type) 주요 지표")
-    # 품목 데이터 대신 'Type'을 기준으로 트렌드 시각화
-    trend_data = f_df.groupby(['월', 'Type'])['출고_수량'].sum().reset_index()
-    fig_trend = px.line(trend_data, x='월', y='출고_수량', color='Type', markers=True,
-                       color_discrete_sequence=px.colors.qualitative.Safe)
-    fig_trend.update_layout(
-        plot_bgcolor='rgba(0,0,0,0)', xaxis_title=None, height=450,
-        legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5)
-    )
-    st.plotly_chart(fig_trend, use_container_width=True)
+    if 'Type' in f_df.columns:
+        trend_data = f_df.groupby(['월', 'month_idx', 'Type'])['출고_수량'].sum().reset_index().sort_values('month_idx')
+        fig_trend = px.line(trend_data, x='월', y='출고_수량', color='Type', markers=True,
+                            color_discrete_sequence=px.colors.qualitative.Safe)
+        fig_trend.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)', xaxis_title=None, height=450,
+            legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5)
+        )
+        st.plotly_chart(fig_trend, use_container_width=True)
+    else:
+        st.info("Type 정보가 없습니다.")
 
-# 그래프 섹션 2 (거래처별 비중 & 상세 테이블)
+# 그래프 섹션 2
 st.markdown("---")
 col_pie, col_table = st.columns([1, 1.5])
 
 with col_pie:
     st.markdown("### ■ 거래처별 Sell-Out 비중")
-    # Donut Chart
     fig_pie = px.pie(f_df, values='출고_수량', names='CUSTOMER', hole=0.5,
                     color_discrete_sequence=px.colors.qualitative.Set3)
     fig_pie.update_traces(textinfo='percent+label')
@@ -134,8 +151,9 @@ with col_pie:
 
 with col_table:
     st.markdown("### 📋 SS_Master 데이터 내역")
-    # 주요 컬럼 위주로 보여주는 데이터 프레임
-    view_df = f_df[['월', 'CUSTOMER', 'Type', '출고_수량', '매출액', 'FOC', '결제통화', 'Invoice#']].sort_values('month_idx')
+    cols_to_show = ['월', 'CUSTOMER', 'Type', '출고_수량', '매출액', 'FOC', '결제통화', 'Invoice#']
+    available_cols = [c for c in cols_to_show if c in f_df.columns]
+    view_df = f_df[available_cols].sort_values('월') # month_idx 기준으로 정렬된 상태 유지
     st.dataframe(view_df, use_container_width=True, hide_index=True, height=400)
 
 # --- 6. 엑셀 다운로드 기능 ---
