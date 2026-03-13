@@ -120,8 +120,16 @@ with c2:
     fig_so.update_layout(plot_bgcolor='rgba(0,0,0,0)', barmode='stack', height=400, xaxis_title=None)
     st.plotly_chart(fig_so, use_container_width=True)
 
-# 상세 데이터 내역
+# 상세 데이터 내역 (에러 수정 지점 ⭐)
 st.markdown(f"### 📋 {selected_year} 상세 내역")
 view_cols = ['월', '채널명', '제품명', '제품판매수량', '매출취합용_공급가액(원화기준)']
+# 화면에 보여줄 컬럼만 안전하게 필터링
 avail = [c for c in view_cols if c in f_raw.columns]
-st.dataframe(f_raw[avail].sort_values(['month_idx', '제품판매수량'], ascending=[True, False]), use_container_width=True, hide_index=True)
+
+if not f_raw.empty:
+    # 1. 정렬은 month_idx를 포함한 원본(f_raw)에서 수행합니다.
+    # 2. 정렬된 결과에서 사용자가 보고 싶은 컬럼(avail)만 딱 골라서 출력합니다.
+    sorted_view = f_raw.sort_values(['month_idx', '제품판매수량'], ascending=[True, False])[avail]
+    st.dataframe(sorted_view, use_container_width=True, hide_index=True)
+else:
+    st.info("선택한 조건에 맞는 데이터가 없습니다.")
