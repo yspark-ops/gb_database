@@ -50,10 +50,9 @@ if df_raw.empty or df_master.empty:
     st.warning("데이터를 불러오는 중입니다... 테이블 이름을 확인해주세요.")
     st.stop()
 
-# --- 3. 데이터 전처리 (제공해주신 신규 컬럼명 적용) ---
-
-# 3-1. 출고_RAW (Sell-In) 전처리
-raw_num_cols = ["제품판매수량", "매출취합용_공급가액(원화기준)", "최종_판매금액"]
+# --- 3. 데이터 전처리 ---
+# 숫자형 변환 (출고_RAW)
+raw_num_cols = ["제품판매수량", "매출취합용_공급가액(원화기준)"]
 for col in raw_num_cols:
     if col in df_raw.columns:
         df_raw[col] = pd.to_numeric(df_raw[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
@@ -62,7 +61,7 @@ if '월' in df_raw.columns:
     df_raw['month_idx'] = df_raw['월'].astype(str).str.extract('(\d+)').fillna(0).astype(int)
     df_raw = df_raw.sort_values('month_idx')
 
-# 3-2. SS_Master (Sell-Out) 전처리
+# 숫자형 변환 (SS_Master)
 master_num_cols = ["출고_수량", "매출액", "FOC"]
 for col in master_num_cols:
     if col in df_master.columns:
@@ -72,17 +71,33 @@ if '월' in df_master.columns:
     df_master['month_idx'] = df_master['월'].astype(str).str.extract('(\d+)').fillna(0).astype(int)
     df_master = df_master.sort_values('month_idx')
 
-# --- 4. 사이드바 필터 ---
+# --- 4. 사이드바 필터 (거래처 필터 부활 ⭐) ---
 with st.sidebar:
     st.image("hince.png", use_container_width=True)
     st.markdown("---")
     
-    # 연도 선택 (출고_RAW의 'Y' 컬럼 기준)
+    # 1. 연도 필터
     years = sorted(df_raw['Y'].unique(), reverse=True) if 'Y' in df_raw.columns else [2025]
     selected_year = st.selectbox("📅 기준 연도", years)
     
-    f_raw = df_raw[df_raw['Y'] == selected_year] if 'Y' in df_raw.columns else df_raw
-    f_master = df_master[df_master['연도'] == selected_year] if '연도' in df_master.columns else df_master
+    # 2. 통합 거래처/채널 필터 ⭐
+    # RAW의 채널명과 Master의 CUSTOMER를 합쳐서 유니크한 리스트 생성
+    raw_channels = set(df_raw['채널명'].unique()) if '채널명' in df_raw.columns else set()
+    master_customers = set(df_master['CUSTOMER'].unique()) if 'CUSTOMER' in df_master.columns else set()
+    all_entities = sorted(list(raw_channels | master_customers))
+    
+    selected_entities = st.multiselect("🤝 거래처/채널 선택", all_entities, default=all_entities)
+
+# 필터링 적용
+f_raw = df_raw[
+    (df_raw['Y'] == selected_year) & 
+    (df_raw['채널명'].isin(selected_entities))
+] if ('Y' in df_raw.columns and '채널명' in df_raw.columns) else df_raw
+
+f_master = df_master[
+    (df_master['연도'] == selected_year) & 
+    (df_master['CUSTOMER'].isin(selected_entities))
+] if ('연도' in df_master.columns and 'CUSTOMER' in df_master.columns) else df_master
 
 # --- 5. 메인 대시보드 UI ---
 st.markdown(f'<h1 style="color: #A37F7D; font-size: 26px;">📊 {selected_year} hince Integrated Sales Performance</h1>', unsafe_allow_html=True)
@@ -97,7 +112,7 @@ k1, k2, k3, k4 = st.columns(4)
 with k1: st.markdown(f'<div class="metric-card"><div class="metric-label">총 Sell-In 매출액</div><div class="metric-value">₩{f_raw["매출취합용_공급가액(원화기준)"].sum():,.0f}</div></div>', unsafe_allow_html=True)
 with k2: st.markdown(f'<div class="metric-card"><div class="metric-label">총 Sell-In 수량</div><div class="metric-value">{f_raw["제품판매수량"].sum():,.0f} EA</div></div>', unsafe_allow_html=True)
 with k3: st.markdown(f'<div class="metric-card"><div class="metric-label">활성 채널 수</div><div class="metric-value">{f_raw["채널명"].nunique()} 개</div></div>', unsafe_allow_html=True)
-with k4: st.markdown(f'<div class="metric-card"><div class="metric-label">FOC 발생</div><div class="metric-value">{len(f_raw[f_raw["FOC"] == "Y"])} 건</div></div>', unsafe_allow_html=True)
+with k4: st.markdown(f'<div class="metric-card"><div class="metric-label">필터링된 데이터</div><div class="metric-value">{len(f_raw)} 건</div></div>', unsafe_allow_html=True)
 
 # Sell-In 그래프 3개 한 줄 배치
 si1, si2, si3 = st.columns(3)
@@ -110,14 +125,14 @@ with si1:
     st.plotly_chart(fig_si_monthly, use_container_width=True)
 
 with si2:
-    st.markdown("### ■ 품목별 주요 지표 (대카테고리)")
+    st.markdown("### ■ 품목별 주요 지표 (대)")
     if '대' in f_raw.columns:
         fig_si_dae = px.bar(f_raw.groupby('대')['제품판매수량'].sum().reset_index(), x='대', y='제품판매수량', color_discrete_sequence=['#D4A5A5'])
         fig_si_dae.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title=None, height=330, margin=dict(t=10, b=10, l=10, r=10))
         st.plotly_chart(fig_si_dae, use_container_width=True)
 
 with si3:
-    st.markdown("### ■ 제품 카테고리별 비중 (중)")
+    st.markdown("### ■ 카테고리별 비중 (중)")
     if '중' in f_raw.columns:
         fig_si_pie = px.pie(f_raw, values='매출취합용_공급가액(원화기준)', names='중', hole=0.5, color_discrete_sequence=hince_colors)
         fig_si_pie.update_traces(textinfo='percent')
@@ -154,19 +169,14 @@ with so3:
 
 st.markdown("---")
 
-# 하단 상세 데이터 내역 (Sell-In 기준)
-st.markdown("### 📋 출고_RAW 상세 데이터")
-raw_view_cols = ['월', '채널명', '제품명', '대', '중', '제품판매수량', '매출취합용_공급가액(원화기준)']
-available_raw_cols = [c for c in raw_view_cols if c in f_raw.columns]
+# 하단 상세 데이터 (중요 컬럼 필터 정렬)
+st.markdown("### 📋 출고_RAW 상세 데이터 (Sell-In)")
+raw_cols = ['월', '채널명', '제품명', '제품판매수량', '매출취합용_공급가액(원화기준)']
+available_raw = [c for c in raw_cols if c in f_raw.columns]
 
-# 정렬 에러 해결 로직 ⭐
 if 'month_idx' in f_raw.columns:
-    view_df = f_raw.sort_values('month_idx')[available_raw_cols]
+    view_df = f_raw.sort_values('month_idx')[available_raw]
 else:
-    view_df = f_raw[available_raw_cols]
+    view_df = f_raw[available_raw]
 
-st.dataframe(view_df, use_container_width=True, hide_index=True, height=300)
-
-# --- 6. 다운로드 버튼 ---
-csv = f_raw.to_csv(index=False).encode('utf-8-sig')
-st.download_button(label="📥 Sell-In 데이터 다운로드 (CSV)", data=csv, file_name=f'hince_sell_in_{selected_year}.csv', mime='text/csv')
+st.dataframe(view_df, use_container_width=True, hide_index=True, height=250)
