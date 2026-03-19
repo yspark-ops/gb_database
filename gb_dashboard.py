@@ -44,6 +44,19 @@ def get_raw_data():
         return pd.DataFrame()
 
 df_raw = get_raw_data()
+# get_raw_data() 호출 직후에 추가
+df_raw = get_raw_data()
+
+# ⬇️ 이 블록 임시 추가
+with st.expander("🔍 진단 데이터 (확인 후 삭제)"):
+    st.write("**전체 컬럼 목록:**", df_raw.columns.tolist())
+    st.write("**상위 5행:**")
+    st.dataframe(df_raw.head(5))
+    if 'Y' in df_raw.columns:
+        st.write("**Y열 유니크 값:**", df_raw['Y'].unique().tolist())
+        st.write("**Y열 타입:**", df_raw['Y'].dtype)
+    else:
+        st.error("Y 컬럼 없음!")
 
 # --- 3. 사용자 요청 로직 전처리 (Y열 타격) ⭐ ---
 def preprocess_raw_data(df):
