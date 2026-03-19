@@ -5,8 +5,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from supabase import create_client, Client
 
-# --- 1. 페이지 설정 및 hince 스타일 ---
-st.set_page_config(page_title="hince 2026 Q1 Analysis", layout="wide")
+# --- 1. 페이지 설정 및 hince 스타일 (Rose-Beige) ---
+st.set_page_config(page_title="2026 hince SS_Master Analysis", layout="wide")
 
 def local_css():
     st.markdown("""
@@ -18,127 +18,148 @@ def local_css():
             border-radius: 20px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
             text-align: center;
+            border: 1px solid #F0F0F0;
         }
+        .metric-label { color: #6B7280; font-size: 14px; font-weight: 500; margin-bottom: 8px; }
         .metric-value { color: #A37F7D; font-size: 26px; font-weight: 700; }
-        h3 { color: #A37F7D !important; font-weight: 700; }
+        h3 { color: #A37F7D !important; font-weight: 700 !important; margin-bottom: 20px !important; }
         </style>
     """, unsafe_allow_html=True)
 
 local_css()
 
-# --- 2. Supabase 데이터 로드 ---
+# --- 2. Supabase 데이터 로드 (SS_Master 전용) ---
 @st.cache_data(ttl=5)
-def get_supabase_data(table_name):
+def get_master_data():
     try:
         url = st.secrets["SUPABASE_URL"]
         key = st.secrets["SUPABASE_KEY"] 
         supabase: Client = create_client(url, key)
-        response = supabase.table(table_name).select("*").execute()
+        # SS_Master 테이블만 호출
+        response = supabase.table("SS_Master").select("*").execute()
         return pd.DataFrame(response.data)
     except Exception as e:
-        st.error(f"{table_name} 로드 실패: {e}")
+        st.error(f"SS_Master 데이터 로드 실패: {e}")
         return pd.DataFrame()
 
-df_raw = get_supabase_data("출고_RAW")
-df_master = get_supabase_data("SS_Master")
+df_all = get_master_data()
 
-# --- 3. 데이터 전처리 및 필터링 (사용자 요청 로직) ⭐ ---
+if df_all.empty:
+    st.warning("⚠️ SS_Master 테이블에 데이터가 없습니다.")
+    st.stop()
 
-# 3-1. 출고_RAW 전처리 (S열: Y, T열: M)
-if not df_raw.empty:
-    # 숫자형 변환
-    df_raw['Y'] = pd.to_numeric(df_raw['Y'], errors='coerce')
-    df_raw['M'] = pd.to_numeric(df_raw['M'], errors='coerce')
-    df_raw['제품판매수량'] = pd.to_numeric(df_raw['제품판매수량'], errors='coerce').fillna(0)
-    df_raw['매출취합용_공급가액(원화기준)'] = pd.to_numeric(df_raw['매출취합용_공급가액(원화기준)'], errors='coerce').fillna(0)
+# --- 3. 데이터 전처리 (사용자 요청 로직 기반) ⭐ ---
+
+def preprocess_master(df):
+    # 컬럼명 앞뒤 공백 제거
+    df.columns = [c.strip() for c in df.columns]
     
-    # ⭐ 2026년 1~3월 데이터만 추출
-    f_raw = df_raw[(df_raw['Y'] == 2026) & (df_raw['M'].isin([1, 2, 3]))].copy()
-    f_raw['월_표시'] = f_raw['M'].apply(lambda x: f"{int(x):02d}월")
-else:
-    f_raw = pd.DataFrame()
-
-# 3-2. SS_Master 매출액 매칭 (AJ열: 연도, B열: 월, D열: CUSTOMER, N열: 매출액)
-if not df_master.empty:
-    # AJ열(연도) 2026, B열(월) '3월' 필터링
-    # (주의: B열이 '3월' 문자열인지 확인 필요)
-    f_master_march = df_master[(df_master['연도'] == 2026) & (df_master['월'] == '3월')].copy()
-    f_master_march['매출액'] = pd.to_numeric(f_master_march['매출액'], errors='coerce').fillna(0)
+    # 1) AJ열(연도) 인식: 2026 필터링을 위해 숫자화
+    if '연도' in df.columns:
+        df['year_val'] = pd.to_numeric(df['연도'], errors='coerce').fillna(0).astype(int)
     
-    # 3월 총 매출액 계산 (SS_Master 기준)
-    march_total_revenue = f_master_march['매출액'].sum()
-else:
-    march_total_revenue = 0
+    # 2) A열(월: '-') 인식 및 정렬용 인덱스 생성
+    if '-' in df.columns:
+        # '3월' -> 3 추출
+        df['month_idx'] = df['-'].astype(str).str.extract(r'(\d+)').fillna(0).astype(int)
+    
+    # 3) M열(매출액) 숫자형 변환 (콤마, 원화기호 등 제거)
+    if '매출액' in df.columns:
+        df['매출액_num'] = pd.to_numeric(df['매출액'].astype(str).str.replace(r'[^0-9.-]', '', regex=True), errors='coerce').fillna(0)
+    
+    return df
 
-# --- 4. 메인 화면 ---
-st.markdown(f'<h1 style="color: #A37F7D;">📊 2026년 1분기 Sell-In 집중 분석</h1>', unsafe_allow_html=True)
+df_proc = preprocess_master(df_all)
 
-if f_raw.empty:
-    st.warning("⚠️ 출고_RAW 시트에서 2026년 1~3월 데이터를 찾을 수 없습니다. (S열과 T열 확인)")
+# --- 4. 2026년 데이터 필터링 ---
+# AJ열에서 2026 찾기
+f_df = df_proc[df_proc['year_val'] == 2026].sort_values('month_idx')
+
+# --- 5. 메인 대시보드 UI ---
+st.markdown(f'<h1 style="color: #A37F7D; font-size: 28px;">📊 2026 hince Sales Dashboard (Master)</h1>', unsafe_allow_html=True)
+
+if f_df.empty:
+    st.info("💡 현재 2026년(AJ열 기준) 데이터가 검색되지 않습니다. 데이터의 연도 값을 확인해주세요.")
 else:
-    # KPI 섹션
+    # KPI 카드 섹션
     k1, k2, k3 = st.columns(3)
     with k1:
-        st.markdown(f'<div class="metric-card"><div class="metric-label">1~3월 총 출고 수량</div><div class="metric-value">{f_raw["제품판매수량"].sum():,.0f} EA</div></div>', unsafe_allow_html=True)
+        total_rev = f_df['매출액_num'].sum()
+        st.markdown(f'<div class="metric-card"><div class="metric-label">2026 총 누적 매출액</div><div class="metric-value">₩{total_rev:,.0f}</div></div>', unsafe_allow_html=True)
     with k2:
-        # SS_Master에서 가져온 3월 매출액 표시
-        st.markdown(f'<div class="metric-card"><div class="metric-label">3월 확정 매출액 (Master)</div><div class="metric-value">₩{march_total_revenue:,.0f}</div></div>', unsafe_allow_html=True)
+        avg_rev = total_rev / f_df['-'].nunique() if f_df['-'].nunique() > 0 else 0
+        st.markdown(f'<div class="metric-card"><div class="metric-label">월평균 매출액</div><div class="metric-value">₩{avg_rev:,.0f}</div></div>', unsafe_allow_html=True)
     with k3:
-        st.markdown(f'<div class="metric-card"><div class="metric-label">출고 진행 거래처</div><div class="metric-value">{f_raw["채널명"].nunique()} 개</div></div>', unsafe_allow_html=True)
+        cust_cnt = f_df['CUSTOMER'].nunique()
+        st.markdown(f'<div class="metric-card"><div class="metric-label">활성 거래처 수</div><div class="metric-value">{cust_cnt} 개</div></div>', unsafe_allow_html=True)
 
     st.markdown("---")
 
-    # --- 첫 번째 그래프: 월별 거래처 출고 현황 ---
-    st.markdown("### ■ 월별 거래처 출고 현황 (Sell-In)")
+    # --- 메인 그래프: 월별 거래처 매출 현황 ---
+    st.markdown("### ■ 월별 거래처 매출 현황 (SS_Master)")
     
-    # 월별/거래처별 집계
-    chart_data = f_raw.groupby(['월_표시', 'M', '채널명'])['제품판매수량'].sum().reset_index().sort_values('M')
+    # 데이터 집계 (A열: 월, C열: CUSTOMER, M열: 매출액)
+    chart_df = f_df.groupby(['-', 'month_idx', 'CUSTOMER'])['매출액_num'].sum().reset_index().sort_values('month_idx')
     
+    # hince 테마 색상 팔레트
+    hince_palette = px.colors.qualitative.Pastel + px.colors.qualitative.Prism
+
     # 누적 막대 그래프 생성
     fig = px.bar(
-        chart_data, 
-        x='월_표시', 
-        y='제품판매수량', 
-        color='채널명',
-        text='제품판매수량', # 막대 안에 수량 표시
-        color_discrete_sequence=px.colors.qualitative.Pastel
+        chart_df, 
+        x='-', 
+        y='매출액_num', 
+        color='CUSTOMER',
+        text='매출액_num', # 막대 안에 매출액 표시
+        color_discrete_sequence=hince_palette
     )
     
-    # 그래프 스타일 조정 (사진 디자인 재현)
+    # 막대 내부 숫자 포맷 및 스타일
     fig.update_traces(
-        texttemplate='%{text:,.0f}', 
+        texttemplate='%{text:,.0s}', # 단위 약어 표시 (예: 120M)
         textposition='inside',
         insidetextanchor='middle',
-        textfont=dict(size=11, color="white")
+        marker_line_width=0
     )
     
-    # 상단 총합 레이블 추가
-    totals = chart_data.groupby('월_표시')['제품판매수량'].sum().reset_index()
+    # 막대 상단에 월별 총합 표시
+    totals = chart_df.groupby('-')['매출액_num'].sum().reset_index()
     for _, row in totals.iterrows():
         fig.add_annotation(
-            x=row['월_표시'], y=row['제품판매수량'],
-            text=f"<b>{row['제품판매수량']:,.0f}</b>",
+            x=row['-'], y=row['매출액_num'],
+            text=f"<b>₩{row['매출액_num']:,.0f}</b>",
             showarrow=False, yshift=10, font=dict(size=12, color="#333333")
         )
 
     fig.update_layout(
         plot_bgcolor='rgba(0,0,0,0)',
         xaxis_title=None,
-        yaxis_title="출고량 (EA)",
-        height=500,
-        legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5)
+        yaxis_title="매출액 (KRW)",
+        height=550,
+        margin=dict(t=40),
+        legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5, title=None)
     )
+    fig.update_yaxes(showgrid=True, gridcolor='#EEEEEE')
+    
     st.plotly_chart(fig, use_container_width=True)
 
-    # 상세 데이터 확인용 테이블
-    with st.expander("📝 2026년 1~3월 상세 출고 데이터 확인"):
-        st.dataframe(f_raw[['월_표시', '채널명', '제품명', '제품판매수량', '매출취합용_공급가액(원화기준)']], use_container_width=True, hide_index=True)
+    # 하단 상세 데이터 테이블
+    st.markdown("### 📋 2026 상세 매출 내역 (SS_Master)")
+    # 사용자 요청 열: A(-), C(CUSTOMER), M(매출액) 위주로 구성
+    display_cols = ['-', 'CUSTOMER', 'Type', '출고_수량', '매출액', '연도']
+    avail_cols = [c for c in display_cols if c in f_df.columns]
+    
+    # 정렬 후 출력
+    st.dataframe(f_df.sort_values('month_idx')[avail_cols], use_container_width=True, hide_index=True)
 
-# 💡 데이터가 안 나올 경우를 위한 진단 정보
-if df_raw.empty:
-    st.info("💡 Supabase '출고_RAW' 테이블이 비어있습니다.")
-else:
-    with st.sidebar:
-        st.write("🔍 **Data Logic Check**")
-        st.write(f"RAW 연도(S열) 종류: {df_raw['Y'].unique().tolist()}")
-        st.write(f"RAW 월(T열) 종류: {df_raw['M'].unique().tolist()}")
+# 💡 사이드바 정보 (데이터 확인용)
+with st.sidebar:
+    st.image("hince.png", use_container_width=True)
+    st.markdown("---")
+    st.write("🔍 **SS_Master 열 매칭 확인**")
+    st.write(f"- 연도(AJ): {'연도' in df_proc.columns}")
+    st.write(f"- 월(A): {'-' in df_proc.columns}")
+    st.write(f"- 거래처(C): {'CUSTOMER' in df_proc.columns}")
+    st.write(f"- 매출액(M): {'매출액' in df_proc.columns}")
+    if not f_df.empty:
+        st.success("2026년 데이터를 성공적으로 찾았습니다!")
