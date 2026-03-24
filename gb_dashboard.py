@@ -32,7 +32,7 @@ def load_raw_data():
 
         while True:
             response = supabase.table("출고_RAW").select(
-                "Y, M, 채널명, 제품판매수량"
+                'Y, M, 채널명, 제품판매수량, "매출취합용_공급가액(원화기준)"'
             ).range(offset, offset + chunk - 1).execute()
 
             if not response.data:
@@ -62,10 +62,22 @@ def preprocess(df):
 
     df["Y"] = pd.to_numeric(df["Y"], errors="coerce")
     df["M"] = pd.to_numeric(df["M"], errors="coerce")
+
+    # 제품판매수량 정제
     df["제품판매수량"] = (
         df["제품판매수량"]
         .astype(str)
-        .str.replace(",", "", regex=False)  # "1,000" → "1000"
+        .str.replace(",", "", regex=False)
+        .pipe(pd.to_numeric, errors="coerce")
+        .fillna(0)
+    )
+
+    # 매출액 정제: "₩2,692,800" → 2692800
+    df["매출액_num"] = (
+        df["매출취합용_공급가액(원화기준)"]
+        .astype(str)
+        .str.replace("₩", "", regex=False)
+        .str.replace(",", "", regex=False)
         .pipe(pd.to_numeric, errors="coerce")
         .fillna(0)
     )
@@ -108,7 +120,6 @@ with col1:
     if df.empty:
         st.info("데이터 없음")
     else:
-        # 월 × 거래처별 수량 합산
         chart_df = (
             df.groupby(["sort_key", "월_label", "채널명"])["제품판매수량"]
             .sum()
@@ -116,7 +127,6 @@ with col1:
             .sort_values("sort_key")
         )
 
-        # x축 순서 고정
         month_order = (
             chart_df[["sort_key", "월_label"]]
             .drop_duplicates()
@@ -124,7 +134,6 @@ with col1:
             .tolist()
         )
 
-        # 월별 총합 (상단 레이블용)
         totals = (
             chart_df.groupby("월_label")["제품판매수량"]
             .sum()
@@ -144,7 +153,6 @@ with col1:
 
         fig.update_traces(textposition="none")
 
-        # 막대 상단 총합 레이블
         for _, row in totals.iterrows():
             fig.add_annotation(
                 x=row["월_label"],
@@ -152,8 +160,8 @@ with col1:
                 text=f"<b>{int(row['제품판매수량']):,}</b>",
                 showarrow=False,
                 yshift=8,
-                font=dict(size=10, color="#555555"),  # ✅ 크기 살짝 줄임
-                bgcolor="rgba(255,255,255,0.0)",       # ✅ 배경 투명
+                font=dict(size=10, color="#555555"),
+                bgcolor="rgba(255,255,255,0.0)",
                 borderpad=1,
             )
 
@@ -165,12 +173,12 @@ with col1:
                 categoryorder="array",
                 categoryarray=month_order,
                 tickfont=dict(size=11),
-                range=[-0.5, len(month_order) - 0.5],  # 양쪽 여백 균등
+                range=[-0.5, len(month_order) - 0.5],
             ),
             yaxis=dict(
                 title=None,
                 tickformat=",",
-                range=[0, totals["제품판매수량"].max() * 1.15],  # ✅ 상단 15% 여백 확보
+                range=[0, totals["제품판매수량"].max() * 1.15],
             ),
             xaxis_title=None,
             height=420,
@@ -190,11 +198,69 @@ with col1:
 
         st.plotly_chart(fig, use_container_width=True)
 
-# ── 그래프 2, 3: 추후 추가 ──────────────────
+# ── 그래프 2: 월별 매출액 ──────────────────
 with col2:
-    st.markdown("### ⬜ 그래프 2")
-    st.info("추후 추가 예정")
+    st.markdown("### 💰 월별 Sell-in 매출액 (원화 기준)")
 
+    if df.empty:
+        st.info("데이터 없음")
+    else:
+        rev_df = (
+            df.groupby(["sort_key", "월_label"])["매출액_num"]
+            .sum()
+            .reset_index()
+            .sort_values("sort_key")
+        )
+
+        month_order2 = rev_df["월_label"].tolist()
+
+        fig2 = px.bar(
+            rev_df,
+            x="월_label",
+            y="매출액_num",
+            color_discrete_sequence=["#C4A09E"],
+            category_orders={"월_label": month_order2},
+        )
+
+        fig2.update_traces(textposition="none")
+
+        for _, row in rev_df.iterrows():
+            fig2.add_annotation(
+                x=row["월_label"],
+                y=row["매출액_num"],
+                text=f"<b>{int(row['매출액_num'] / 1_000_000):.0f}M</b>",
+                showarrow=False,
+                yshift=8,
+                font=dict(size=10, color="#555555"),
+                bgcolor="rgba(255,255,255,0.0)",
+                borderpad=1,
+            )
+
+        fig2.update_layout(
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            xaxis=dict(
+                type="category",
+                categoryorder="array",
+                categoryarray=month_order2,
+                tickfont=dict(size=11),
+                range=[-0.5, len(month_order2) - 0.5],
+            ),
+            yaxis=dict(
+                title=None,
+                tickformat=",.0f",
+                range=[0, rev_df["매출액_num"].max() * 1.15],
+            ),
+            xaxis_title=None,
+            height=420,
+            margin=dict(t=50, b=10, l=10, r=10),
+            bargap=0.3,
+            showlegend=False,
+        )
+
+        st.plotly_chart(fig2, use_container_width=True)
+
+# ── 그래프 3: 추후 추가 ──────────────────
 with col3:
     st.markdown("### ⬜ 그래프 3")
     st.info("추후 추가 예정")
