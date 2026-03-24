@@ -32,7 +32,7 @@ def load_raw_data():
 
         while True:
             response = supabase.table("출고_RAW").select(
-                'Y, M, 채널명, 제품판매수량, "매출취합용_공급가액(원화기준)", 중'
+                'Y, M, 채널명, 제품판매수량, "매출취합용_공급가액(원화기준)", 중, 제품명'
             ).range(offset, offset + chunk - 1).execute()
 
             if not response.data:
@@ -287,7 +287,6 @@ with col3:
         if "중" not in df.columns:
             st.info("'중' 컬럼 없음")
         else:
-            # Top5 카테고리 추출 (출고량 합계 기준, null·'-' 제외)
             top5 = (
                 df[df["중"].notna() & (df["중"] != "-")]
                 .groupby("중")["제품판매수량"]
@@ -296,7 +295,6 @@ with col3:
                 .index.tolist()
             )
 
-            # Top5 필터 후 분기 × 카테고리별 합산
             line_df = (
                 df[df["중"].isin(top5)]
                 .groupby(["분기_sort", "분기_label", "중"])["제품판매수량"]
@@ -305,7 +303,6 @@ with col3:
                 .sort_values("분기_sort")
             )
 
-            # x축 순서 고정
             q_order = (
                 line_df[["분기_sort", "분기_label"]]
                 .drop_duplicates()
@@ -328,7 +325,6 @@ with col3:
                 marker=dict(size=8),
             )
 
-            # 각 포인트 위 수량 레이블
             for _, row in line_df.iterrows():
                 fig3.add_annotation(
                     x=row["분기_label"],
@@ -368,3 +364,46 @@ with col3:
             )
 
             st.plotly_chart(fig3, use_container_width=True)
+
+# ─────────────────────────────────────────
+# 6. Top Selling SKU 테이블 (최근 3개월)
+# ─────────────────────────────────────────
+st.markdown("---")
+st.markdown("### 🏆 Top Selling SKU — 최근 3개월 (2026.01 ~ 2026.03)")
+
+if df.empty:
+    st.info("데이터 없음")
+else:
+    sku_df = df[
+        (df["Y"] == 2026) & (df["M"] <= 3)
+    ].copy()
+
+    if sku_df.empty:
+        st.info("최근 3개월 데이터 없음")
+    else:
+        sku_table = (
+            sku_df.groupby("제품명")
+            .agg(
+                총_출고수량=("제품판매수량", "sum"),
+                총_매출액=("매출액_num", "sum"),
+            )
+            .reset_index()
+            .sort_values("총_출고수량", ascending=False)
+            .head(20)
+            .reset_index(drop=True)
+        )
+
+        # 순위 컬럼 추가
+        sku_table.insert(0, "순위", range(1, len(sku_table) + 1))
+
+        # 포맷 적용
+        sku_display = sku_table.copy()
+        sku_display["총_출고수량"] = sku_display["총_출고수량"].apply(lambda x: f"{int(x):,}")
+        sku_display["총_매출액"] = sku_display["총_매출액"].apply(lambda x: f"₩{int(x):,}")
+        sku_display.columns = ["순위", "제품명", "출고 수량", "매출액 (원화)"]
+
+        st.dataframe(
+            sku_display,
+            use_container_width=True,
+            hide_index=True,
+        )
