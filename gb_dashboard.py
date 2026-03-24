@@ -98,7 +98,6 @@ def preprocess(df):
         .fillna(0)
     )
 
-    # 2025년 4월 ~ 2026년 3월 필터
     mask = (
         ((df["Y"] == 2025) & (df["M"] >= 4)) |
         ((df["Y"] == 2026) & (df["M"] <= 3))
@@ -148,17 +147,21 @@ if not df.empty:
     for col, (y, m, label) in zip(kpi_cols, kpi_months):
         m_df = df[(df["Y"] == y) & (df["M"] == m)]
 
-        # 매출액 (FOC 제외)
-        rev = m_df[m_df["FOC"] != "Y"]["매출액_num"].sum()
+        # FOC 제외 행 / FOC 행 분리
+        non_foc = m_df[m_df["FOC"] != "Y"]
+        foc     = m_df[m_df["FOC"] == "Y"]
 
-        # 총 출고량
-        total_qty = m_df["제품판매수량"].sum()
+        # 매출액 (FOC 제외)
+        rev = non_foc["매출액_num"].sum()
+
+        # 총 출고량 (FOC 제외) ✅
+        total_qty = non_foc["제품판매수량"].sum()
 
         # FOC 출고량
-        foc_qty = m_df[m_df["FOC"] == "Y"]["제품판매수량"].sum()
+        foc_qty = foc["제품판매수량"].sum()
 
-        # 활성 거래처 수 (매출액 > 0 기준)
-        active_customers = m_df[m_df["매출액_num"] > 0]["채널명"].nunique()
+        # 활성 거래처 수 (FOC 제외, 매출액 > 0 기준)
+        active_customers = non_foc[non_foc["매출액_num"] > 0]["채널명"].nunique()
 
         # 거래처당 평균 매출
         avg_rev = rev / active_customers if active_customers > 0 else 0
@@ -170,7 +173,7 @@ if not df.empty:
                 <div class="kpi-label">매출액 (FOC 제외)</div>
                 <div class="kpi-value">₩{int(rev):,}</div>
                 <hr class="kpi-divider">
-                <div class="kpi-label">총 출고량</div>
+                <div class="kpi-label">총 출고량 (FOC 제외)</div>
                 <div class="kpi-value">{int(total_qty):,} 개</div>
                 <hr class="kpi-divider">
                 <div class="kpi-label">FOC 출고량</div>
@@ -278,14 +281,13 @@ with col1:
 
         st.plotly_chart(fig, use_container_width=True)
 
-# ── 그래프 2: 월별 매출액 ──────────────────
+# ── 그래프 2: 월별 매출액 (FOC 제외) ────────
 with col2:
     st.markdown("### 💰 월별 Sell-in 매출액 (원화 기준)")
 
     if df.empty:
         st.info("데이터 없음")
     else:
-        # FOC 제외
         rev_df = (
             df[df["FOC"] != "Y"]
             .groupby(["sort_key", "월_label"])["매출액_num"]
