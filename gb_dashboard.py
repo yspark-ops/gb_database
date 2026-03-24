@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import streamlit.components.v1 as components
 from supabase import create_client, Client
 
 # ─────────────────────────────────────────
@@ -11,38 +12,9 @@ st.set_page_config(page_title="hince Global Dashboard", layout="wide")
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
 * { font-family: 'Inter', sans-serif; }
-
 .main { background-color: #F7F5F4; }
 .block-container { padding-top: 2rem !important; }
-
-/* ── 헤더 ── */
-.header-wrap {
-    display: flex;
-    align-items: center;
-    gap: 24px;
-    padding: 24px 32px;
-    background: #FFFFFF;
-    border-radius: 20px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
-    margin-bottom: 8px;
-}
-.header-title {
-    font-size: 28px;
-    font-weight: 700;
-    color: #2D2D2D;
-    letter-spacing: -0.5px;
-    margin: 0;
-}
-.header-sub {
-    font-size: 13px;
-    color: #A37F7D;
-    font-weight: 500;
-    margin-top: 4px;
-}
-
-/* ── 섹션 타이틀 ── */
 .section-title {
     font-size: 18px;
     font-weight: 700;
@@ -50,52 +22,6 @@ st.markdown("""
     margin: 28px 0 14px 0;
     letter-spacing: -0.3px;
 }
-
-/* ── KPI 카드 ── */
-.kpi-card {
-    background: #FFFFFF;
-    padding: 24px 20px;
-    border-radius: 20px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
-    border: 1px solid #F0EDED;
-    text-align: center;
-    height: 100%;
-}
-.kpi-month {
-    color: #A37F7D;
-    font-size: 15px;
-    font-weight: 700;
-    margin-bottom: 18px;
-    letter-spacing: 0.3px;
-}
-.kpi-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px 0;
-    border-bottom: 1px solid #F3F4F6;
-}
-.kpi-row:last-child { border-bottom: none; }
-.kpi-label {
-    color: #9CA3AF;
-    font-size: 12px;
-    font-weight: 500;
-    text-align: left;
-}
-.kpi-value {
-    color: #1F2937;
-    font-size: 17px;
-    font-weight: 700;
-    text-align: right;
-}
-.kpi-value-highlight {
-    color: #A37F7D;
-    font-size: 22px;
-    font-weight: 700;
-    text-align: right;
-}
-
-/* ── 그래프 섹션 타이틀 ── */
 h3 {
     color: #2D2D2D !important;
     font-size: 14px !important;
@@ -210,8 +136,12 @@ with logo_col:
 with title_col:
     st.markdown("""
     <div style="padding-top: 10px;">
-        <div class="header-title">hince Global Dashboard</div>
-        <div class="header-sub">Sell-in Performance · 2025.04 – 2026.03</div>
+        <div style="font-size:28px; font-weight:700; color:#2D2D2D; letter-spacing:-0.5px;">
+            hince Global Dashboard
+        </div>
+        <div style="font-size:13px; color:#A37F7D; font-weight:500; margin-top:4px;">
+            Sell-in Performance · 2025.04 – 2026.03
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -239,10 +169,56 @@ if not df.empty:
         avg_rev          = rev / active_customers if active_customers > 0 else 0
 
         with col:
-            st.markdown(f"""
+            components.html(f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+            <style>
+                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+                * {{ font-family: 'Inter', sans-serif; box-sizing: border-box; margin: 0; padding: 0; }}
+                body {{ background: transparent; }}
+                .kpi-card {{
+                    background: #FFFFFF;
+                    padding: 20px 18px;
+                    border-radius: 16px;
+                    box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+                    border: 1px solid #F0EDED;
+                }}
+                .kpi-month {{
+                    color: #A37F7D;
+                    font-size: 15px;
+                    font-weight: 700;
+                    margin-bottom: 14px;
+                    text-align: center;
+                }}
+                .kpi-row {{
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 9px 0;
+                    border-bottom: 1px solid #F3F4F6;
+                }}
+                .kpi-row:last-child {{ border-bottom: none; }}
+                .kpi-label {{
+                    color: #9CA3AF;
+                    font-size: 12px;
+                    font-weight: 500;
+                }}
+                .kpi-value {{
+                    color: #1F2937;
+                    font-size: 16px;
+                    font-weight: 700;
+                }}
+                .kpi-value-highlight {{
+                    color: #A37F7D;
+                    font-size: 20px;
+                    font-weight: 700;
+                }}
+            </style>
+            </head>
+            <body>
             <div class="kpi-card">
                 <div class="kpi-month">📆 {label}</div>
-
                 <div class="kpi-row">
                     <span class="kpi-label">매출액 (FOC 제외)</span>
                     <span class="kpi-value-highlight">₩{int(rev):,}</span>
@@ -264,7 +240,9 @@ if not df.empty:
                     <span class="kpi-value">₩{int(avg_rev):,}</span>
                 </div>
             </div>
-            """, unsafe_allow_html=True)
+            </body>
+            </html>
+            """, height=245)
 
 st.markdown("<br>", unsafe_allow_html=True)
 st.markdown("---")
