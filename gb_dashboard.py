@@ -13,6 +13,18 @@ st.markdown("""
 .main { background-color: #F8F9FA; }
 h1 { color: #A37F7D !important; }
 h3 { color: #A37F7D !important; font-size: 15px !important; font-weight: 700 !important; }
+.kpi-card {
+    background-color: #FFFFFF;
+    padding: 16px 12px;
+    border-radius: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border: 1px solid #F0EDED;
+    text-align: center;
+}
+.kpi-month { color: #A37F7D; font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+.kpi-label { color: #9CA3AF; font-size: 11px; font-weight: 500; margin-bottom: 3px; }
+.kpi-value { color: #1F2937; font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+.kpi-divider { border: none; border-top: 1px solid #F3F4F6; margin: 6px 0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -32,7 +44,7 @@ def load_raw_data():
 
         while True:
             response = supabase.table("출고_RAW").select(
-                'Y, M, 채널명, 제품판매수량, "매출취합용_공급가액(원화기준)", 중, 제품명'
+                'Y, M, 채널명, 제품판매수량, "매출취합용_공급가액(원화기준)", 중, 제품명, FOC'
             ).range(offset, offset + chunk - 1).execute()
 
             if not response.data:
@@ -69,7 +81,6 @@ def preprocess(df):
     df["Y"] = pd.to_numeric(df["Y"], errors="coerce")
     df["M"] = pd.to_numeric(df["M"], errors="coerce")
 
-    # 제품판매수량 정제
     df["제품판매수량"] = (
         df["제품판매수량"]
         .astype(str)
@@ -78,7 +89,6 @@ def preprocess(df):
         .fillna(0)
     )
 
-    # 매출액 정제: "₩2,692,800" → 2692800
     df["매출액_num"] = (
         df["매출취합용_공급가액(원화기준)"]
         .astype(str)
@@ -95,16 +105,12 @@ def preprocess(df):
     )
     df = df[mask].copy()
 
-    # 월 레이블: "25.04" ~ "26.03"
     df["월_label"] = (
         df["Y"].astype(int).astype(str).str[-2:] + "." +
         df["M"].astype(int).astype(str).str.zfill(2)
     )
-
-    # 월 정렬키
     df["sort_key"] = df["Y"] * 100 + df["M"]
 
-    # 분기 레이블: "25_2Q", "25_3Q", "25_4Q", "26_1Q"
     quarter_num = {"1Q": 1, "2Q": 2, "3Q": 3, "4Q": 4}
     df["분기_label"] = (
         df["Y"].astype(int).astype(str).str[-2:] + "_" +
@@ -120,14 +126,71 @@ def preprocess(df):
 df = preprocess(df_raw)
 
 # ─────────────────────────────────────────
-# 4. 대시보드 헤더
+# 4. 로고 + 헤더
 # ─────────────────────────────────────────
-st.markdown('<h1 style="font-size:24px;">📦 hince Sell-in Dashboard</h1>', unsafe_allow_html=True)
+logo_col, title_col = st.columns([1, 8])
+with logo_col:
+    st.image("hince.png", width=90)
+with title_col:
+    st.markdown('<h1 style="font-size:26px; padding-top:16px;">hince Sell-in Dashboard</h1>', unsafe_allow_html=True)
+
 st.markdown("---")
 
 # ─────────────────────────────────────────
-# 5. 그래프 영역 (3열 레이아웃)
+# 5. 2026 월별 KPI 카드 (1~3월)
 # ─────────────────────────────────────────
+st.markdown("### 📅 2026 월별 주요 지표")
+
+if not df.empty:
+    kpi_months = [(2026, 1, "2026년 1월"), (2026, 2, "2026년 2월"), (2026, 3, "2026년 3월")]
+    kpi_cols = st.columns(3)
+
+    for col, (y, m, label) in zip(kpi_cols, kpi_months):
+        m_df = df[(df["Y"] == y) & (df["M"] == m)]
+
+        # 매출액 (FOC 제외)
+        rev = m_df[m_df["FOC"] != "Y"]["매출액_num"].sum()
+
+        # 총 출고량
+        total_qty = m_df["제품판매수량"].sum()
+
+        # FOC 출고량
+        foc_qty = m_df[m_df["FOC"] == "Y"]["제품판매수량"].sum()
+
+        # 활성 거래처 수 (매출액 > 0 기준)
+        active_customers = m_df[m_df["매출액_num"] > 0]["채널명"].nunique()
+
+        # 거래처당 평균 매출
+        avg_rev = rev / active_customers if active_customers > 0 else 0
+
+        with col:
+            st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-month">{label}</div>
+                <div class="kpi-label">매출액 (FOC 제외)</div>
+                <div class="kpi-value">₩{int(rev):,}</div>
+                <hr class="kpi-divider">
+                <div class="kpi-label">총 출고량</div>
+                <div class="kpi-value">{int(total_qty):,} 개</div>
+                <hr class="kpi-divider">
+                <div class="kpi-label">FOC 출고량</div>
+                <div class="kpi-value">{int(foc_qty):,} 개</div>
+                <hr class="kpi-divider">
+                <div class="kpi-label">활성 거래처 수</div>
+                <div class="kpi-value">{active_customers} 개</div>
+                <hr class="kpi-divider">
+                <div class="kpi-label">거래처당 평균 매출</div>
+                <div class="kpi-value">₩{int(avg_rev):,}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+st.markdown("---")
+
+# ─────────────────────────────────────────
+# 6. 그래프 영역 (3열 레이아웃)
+# ─────────────────────────────────────────
+st.markdown("### 📊 Sell-in 트렌드 분석")
 col1, col2, col3 = st.columns(3)
 
 # ── 그래프 1: 월별 거래처별 출고량 ──────────
@@ -222,8 +285,10 @@ with col2:
     if df.empty:
         st.info("데이터 없음")
     else:
+        # FOC 제외
         rev_df = (
-            df.groupby(["sort_key", "월_label"])["매출액_num"]
+            df[df["FOC"] != "Y"]
+            .groupby(["sort_key", "월_label"])["매출액_num"]
             .sum()
             .reset_index()
             .sort_values("sort_key")
@@ -366,7 +431,7 @@ with col3:
             st.plotly_chart(fig3, use_container_width=True)
 
 # ─────────────────────────────────────────
-# 6. Top Selling SKU 테이블 (최근 3개월)
+# 7. Top Selling SKU 테이블 (최근 3개월, FOC 제외)
 # ─────────────────────────────────────────
 st.markdown("---")
 st.markdown("### 🏆 Top Selling SKU — 최근 3개월 (2026.01 ~ 2026.03)")
@@ -375,7 +440,7 @@ if df.empty:
     st.info("데이터 없음")
 else:
     sku_df = df[
-        (df["Y"] == 2026) & (df["M"] <= 3)
+        (df["Y"] == 2026) & (df["M"] <= 3) & (df["FOC"] != "Y")
     ].copy()
 
     if sku_df.empty:
@@ -393,10 +458,8 @@ else:
             .reset_index(drop=True)
         )
 
-        # 순위 컬럼 추가
         sku_table.insert(0, "순위", range(1, len(sku_table) + 1))
 
-        # 포맷 적용
         sku_display = sku_table.copy()
         sku_display["총_출고수량"] = sku_display["총_출고수량"].apply(lambda x: f"{int(x):,}")
         sku_display["총_매출액"] = sku_display["총_매출액"].apply(lambda x: f"₩{int(x):,}")
