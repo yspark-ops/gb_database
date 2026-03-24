@@ -242,7 +242,7 @@ if not df.empty:
             </div>
             </body>
             </html>
-            """, height=245)
+            """, height=290)
 
 st.markdown("<br>", unsafe_allow_html=True)
 st.markdown("---")
