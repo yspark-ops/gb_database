@@ -151,10 +151,10 @@ with col1:
                 y=row["제품판매수량"],
                 text=f"<b>{int(row['제품판매수량']):,}</b>",
                 showarrow=False,
-                yshift=14,
-                font=dict(size=11, color="#333333"),
-                bgcolor="rgba(255,255,255,0.7)",
-                borderpad=2,
+                yshift=8,
+                font=dict(size=10, color="#555555"),  # ✅ 크기 살짝 줄임
+                bgcolor="rgba(255,255,255,0.0)",       # ✅ 배경 투명
+                borderpad=1,
             )
 
         fig.update_layout(
@@ -170,6 +170,7 @@ with col1:
             yaxis=dict(
                 title=None,
                 tickformat=",",
+                range=[0, totals["제품판매수량"].max() * 1.15],  # ✅ 상단 15% 여백 확보
             ),
             xaxis_title=None,
             height=420,
