@@ -107,23 +107,35 @@ with col1:
             .sort_values("sort_key")
         )
 
+        # x축 순서 고정 리스트
+        month_order = (
+            chart_df[["sort_key", "월_label"]]
+            .drop_duplicates()
+            .sort_values("sort_key")["월_label"]
+            .tolist()
+        )
+
         # 월별 총합 (상단 레이블용)
-        totals = chart_df.groupby(["월_label", "sort_key"])["제품판매수량"].sum().reset_index()
+        totals = (
+            chart_df.groupby("월_label")["제품판매수량"]
+            .sum()
+            .reindex(month_order)
+            .reset_index()
+        )
 
         fig = px.bar(
             chart_df,
             x="월_label",
             y="제품판매수량",
             color="채널명",
-            color_discrete_sequence=px.colors.qualitative.Pastel +
-                                     px.colors.qualitative.Set3,
-            category_orders={"월_label": chart_df.sort_values("sort_key")["월_label"].unique().tolist()},
+            color_discrete_sequence=px.colors.qualitative.Pastel
+                                   + px.colors.qualitative.Set3,
+            category_orders={"월_label": month_order},  # ✅ 순서 고정
         )
 
-        # 막대 내부 텍스트 제거 (채널 많아서 복잡해짐)
         fig.update_traces(textposition="none")
 
-        # 월 총합 레이블 (막대 상단)
+        # 막대 상단 총합 레이블
         for _, row in totals.iterrows():
             fig.add_annotation(
                 x=row["월_label"],
@@ -137,6 +149,11 @@ with col1:
         fig.update_layout(
             plot_bgcolor="rgba(0,0,0,0)",
             paper_bgcolor="rgba(0,0,0,0)",
+            xaxis=dict(
+                type="category",       # ✅ 숫자가 아닌 카테고리로 강제 지정
+                categoryorder="array",
+                categoryarray=month_order,
+            ),
             xaxis_title=None,
             yaxis_title="출고 수량",
             height=420,
