@@ -6,25 +6,102 @@ from supabase import create_client, Client
 # ─────────────────────────────────────────
 # 1. 페이지 설정 & 스타일
 # ─────────────────────────────────────────
-st.set_page_config(page_title="2026 hince Sales Dashboard", layout="wide")
+st.set_page_config(page_title="hince Global Dashboard", layout="wide")
 
 st.markdown("""
 <style>
-.main { background-color: #F8F9FA; }
-h1 { color: #A37F7D !important; }
-h3 { color: #A37F7D !important; font-size: 15px !important; font-weight: 700 !important; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+* { font-family: 'Inter', sans-serif; }
+
+.main { background-color: #F7F5F4; }
+.block-container { padding-top: 2rem !important; }
+
+/* ── 헤더 ── */
+.header-wrap {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    padding: 24px 32px;
+    background: #FFFFFF;
+    border-radius: 20px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    margin-bottom: 8px;
+}
+.header-title {
+    font-size: 28px;
+    font-weight: 700;
+    color: #2D2D2D;
+    letter-spacing: -0.5px;
+    margin: 0;
+}
+.header-sub {
+    font-size: 13px;
+    color: #A37F7D;
+    font-weight: 500;
+    margin-top: 4px;
+}
+
+/* ── 섹션 타이틀 ── */
+.section-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #2D2D2D;
+    margin: 28px 0 14px 0;
+    letter-spacing: -0.3px;
+}
+
+/* ── KPI 카드 ── */
 .kpi-card {
-    background-color: #FFFFFF;
-    padding: 16px 12px;
-    border-radius: 16px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    background: #FFFFFF;
+    padding: 24px 20px;
+    border-radius: 20px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
     border: 1px solid #F0EDED;
     text-align: center;
+    height: 100%;
 }
-.kpi-month { color: #A37F7D; font-size: 13px; font-weight: 700; margin-bottom: 10px; }
-.kpi-label { color: #9CA3AF; font-size: 11px; font-weight: 500; margin-bottom: 3px; }
-.kpi-value { color: #1F2937; font-size: 15px; font-weight: 700; margin-bottom: 8px; }
-.kpi-divider { border: none; border-top: 1px solid #F3F4F6; margin: 6px 0; }
+.kpi-month {
+    color: #A37F7D;
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 18px;
+    letter-spacing: 0.3px;
+}
+.kpi-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #F3F4F6;
+}
+.kpi-row:last-child { border-bottom: none; }
+.kpi-label {
+    color: #9CA3AF;
+    font-size: 12px;
+    font-weight: 500;
+    text-align: left;
+}
+.kpi-value {
+    color: #1F2937;
+    font-size: 17px;
+    font-weight: 700;
+    text-align: right;
+}
+.kpi-value-highlight {
+    color: #A37F7D;
+    font-size: 22px;
+    font-weight: 700;
+    text-align: right;
+}
+
+/* ── 그래프 섹션 타이틀 ── */
+h3 {
+    color: #2D2D2D !important;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    margin-bottom: 8px !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -125,20 +202,25 @@ def preprocess(df):
 df = preprocess(df_raw)
 
 # ─────────────────────────────────────────
-# 4. 로고 + 헤더
+# 4. 헤더 (로고 + 타이틀)
 # ─────────────────────────────────────────
-logo_col, title_col = st.columns([1, 8])
+logo_col, title_col = st.columns([1, 9])
 with logo_col:
-    st.image("hince.png", width=90)
+    st.image("hince.png", width=120)
 with title_col:
-    st.markdown('<h1 style="font-size:26px; padding-top:16px;">hince Sell-in Dashboard</h1>', unsafe_allow_html=True)
+    st.markdown("""
+    <div style="padding-top: 10px;">
+        <div class="header-title">hince Global Dashboard</div>
+        <div class="header-sub">Sell-in Performance · 2025.04 – 2026.03</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 st.markdown("---")
 
 # ─────────────────────────────────────────
 # 5. 2026 월별 KPI 카드 (1~3월)
 # ─────────────────────────────────────────
-st.markdown("### 📅 2026 월별 주요 지표")
+st.markdown('<div class="section-title">📅 2026 월별 주요 지표</div>', unsafe_allow_html=True)
 
 if not df.empty:
     kpi_months = [(2026, 1, "2026년 1월"), (2026, 2, "2026년 2월"), (2026, 3, "2026년 3월")]
@@ -147,43 +229,40 @@ if not df.empty:
     for col, (y, m, label) in zip(kpi_cols, kpi_months):
         m_df = df[(df["Y"] == y) & (df["M"] == m)]
 
-        # FOC 제외 행 / FOC 행 분리
         non_foc = m_df[m_df["FOC"] != "Y"]
         foc     = m_df[m_df["FOC"] == "Y"]
 
-        # 매출액 (FOC 제외)
-        rev = non_foc["매출액_num"].sum()
-
-        # 총 출고량 (FOC 제외) ✅
-        total_qty = non_foc["제품판매수량"].sum()
-
-        # FOC 출고량
-        foc_qty = foc["제품판매수량"].sum()
-
-        # 활성 거래처 수 (FOC 제외, 매출액 > 0 기준)
+        rev              = non_foc["매출액_num"].sum()
+        total_qty        = non_foc["제품판매수량"].sum()
+        foc_qty          = foc["제품판매수량"].sum()
         active_customers = non_foc[non_foc["매출액_num"] > 0]["채널명"].nunique()
-
-        # 거래처당 평균 매출
-        avg_rev = rev / active_customers if active_customers > 0 else 0
+        avg_rev          = rev / active_customers if active_customers > 0 else 0
 
         with col:
             st.markdown(f"""
             <div class="kpi-card">
-                <div class="kpi-month">{label}</div>
-                <div class="kpi-label">매출액 (FOC 제외)</div>
-                <div class="kpi-value">₩{int(rev):,}</div>
-                <hr class="kpi-divider">
-                <div class="kpi-label">총 출고량 (FOC 제외)</div>
-                <div class="kpi-value">{int(total_qty):,} 개</div>
-                <hr class="kpi-divider">
-                <div class="kpi-label">FOC 출고량</div>
-                <div class="kpi-value">{int(foc_qty):,} 개</div>
-                <hr class="kpi-divider">
-                <div class="kpi-label">활성 거래처 수</div>
-                <div class="kpi-value">{active_customers} 개</div>
-                <hr class="kpi-divider">
-                <div class="kpi-label">거래처당 평균 매출</div>
-                <div class="kpi-value">₩{int(avg_rev):,}</div>
+                <div class="kpi-month">📆 {label}</div>
+
+                <div class="kpi-row">
+                    <span class="kpi-label">매출액 (FOC 제외)</span>
+                    <span class="kpi-value-highlight">₩{int(rev):,}</span>
+                </div>
+                <div class="kpi-row">
+                    <span class="kpi-label">총 출고량 (FOC 제외)</span>
+                    <span class="kpi-value">{int(total_qty):,} 개</span>
+                </div>
+                <div class="kpi-row">
+                    <span class="kpi-label">FOC 출고량</span>
+                    <span class="kpi-value">{int(foc_qty):,} 개</span>
+                </div>
+                <div class="kpi-row">
+                    <span class="kpi-label">활성 거래처 수</span>
+                    <span class="kpi-value">{active_customers} 개</span>
+                </div>
+                <div class="kpi-row">
+                    <span class="kpi-label">거래처당 평균 매출</span>
+                    <span class="kpi-value">₩{int(avg_rev):,}</span>
+                </div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -193,7 +272,7 @@ st.markdown("---")
 # ─────────────────────────────────────────
 # 6. 그래프 영역 (3열 레이아웃)
 # ─────────────────────────────────────────
-st.markdown("### 📊 Sell-in 트렌드 분석")
+st.markdown('<div class="section-title">📊 Sell-in 트렌드 분석</div>', unsafe_allow_html=True)
 col1, col2, col3 = st.columns(3)
 
 # ── 그래프 1: 월별 거래처별 출고량 ──────────
@@ -436,7 +515,7 @@ with col3:
 # 7. Top Selling SKU 테이블 (최근 3개월, FOC 제외)
 # ─────────────────────────────────────────
 st.markdown("---")
-st.markdown("### 🏆 Top Selling SKU — 최근 3개월 (2026.01 ~ 2026.03)")
+st.markdown('<div class="section-title">🏆 Top Selling SKU — 최근 3개월 (2026.01 ~ 2026.03)</div>', unsafe_allow_html=True)
 
 if df.empty:
     st.info("데이터 없음")
