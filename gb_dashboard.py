@@ -32,7 +32,7 @@ def load_raw_data():
 
         while True:
             response = supabase.table("출고_RAW").select(
-                'Y, M, 채널명, 제품판매수량, "매출취합용_공급가액(원화기준)"'
+                'Y, M, 채널명, 제품판매수량, "매출취합용_공급가액(원화기준)", 중'
             ).range(offset, offset + chunk - 1).execute()
 
             if not response.data:
@@ -56,6 +56,12 @@ df_raw = load_raw_data()
 # ─────────────────────────────────────────
 # 3. 전처리
 # ─────────────────────────────────────────
+def get_quarter(m):
+    if m <= 3:   return "1Q"
+    elif m <= 6: return "2Q"
+    elif m <= 9: return "3Q"
+    else:        return "4Q"
+
 def preprocess(df):
     if df.empty:
         return df
@@ -95,8 +101,19 @@ def preprocess(df):
         df["M"].astype(int).astype(str).str.zfill(2)
     )
 
-    # 정렬키
+    # 월 정렬키
     df["sort_key"] = df["Y"] * 100 + df["M"]
+
+    # 분기 레이블: "25_2Q", "25_3Q", "25_4Q", "26_1Q"
+    quarter_num = {"1Q": 1, "2Q": 2, "3Q": 3, "4Q": 4}
+    df["분기_label"] = (
+        df["Y"].astype(int).astype(str).str[-2:] + "_" +
+        df["M"].astype(int).apply(get_quarter)
+    )
+    df["분기_sort"] = (
+        df["Y"] * 10 +
+        df["M"].astype(int).apply(get_quarter).map(quarter_num)
+    )
 
     return df
 
@@ -260,7 +277,94 @@ with col2:
 
         st.plotly_chart(fig2, use_container_width=True)
 
-# ── 그래프 3: 추후 추가 ──────────────────
+# ── 그래프 3: 카테고리별 분기 출고량 Top5 선 차트 ──
 with col3:
-    st.markdown("### ⬜ 그래프 3")
-    st.info("추후 추가 예정")
+    st.markdown("### 📈 카테고리별 분기 출고량 Top 5")
+
+    if df.empty:
+        st.info("데이터 없음")
+    else:
+        if "중" not in df.columns:
+            st.info("'중' 컬럼 없음")
+        else:
+            # Top5 카테고리 추출 (출고량 합계 기준, null·'-' 제외)
+            top5 = (
+                df[df["중"].notna() & (df["중"] != "-")]
+                .groupby("중")["제품판매수량"]
+                .sum()
+                .nlargest(5)
+                .index.tolist()
+            )
+
+            # Top5 필터 후 분기 × 카테고리별 합산
+            line_df = (
+                df[df["중"].isin(top5)]
+                .groupby(["분기_sort", "분기_label", "중"])["제품판매수량"]
+                .sum()
+                .reset_index()
+                .sort_values("분기_sort")
+            )
+
+            # x축 순서 고정
+            q_order = (
+                line_df[["분기_sort", "분기_label"]]
+                .drop_duplicates()
+                .sort_values("분기_sort")["분기_label"]
+                .tolist()
+            )
+
+            fig3 = px.line(
+                line_df,
+                x="분기_label",
+                y="제품판매수량",
+                color="중",
+                markers=True,
+                color_discrete_sequence=px.colors.qualitative.Pastel,
+                category_orders={"분기_label": q_order},
+            )
+
+            fig3.update_traces(
+                line=dict(width=2.5),
+                marker=dict(size=8),
+            )
+
+            # 각 포인트 위 수량 레이블
+            for _, row in line_df.iterrows():
+                fig3.add_annotation(
+                    x=row["분기_label"],
+                    y=row["제품판매수량"],
+                    text=f"{int(row['제품판매수량']):,}",
+                    showarrow=False,
+                    yshift=12,
+                    font=dict(size=9, color="#555555"),
+                )
+
+            fig3.update_layout(
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)",
+                xaxis=dict(
+                    type="category",
+                    categoryorder="array",
+                    categoryarray=q_order,
+                    tickfont=dict(size=11),
+                ),
+                yaxis=dict(
+                    title=None,
+                    tickformat=",",
+                    range=[0, line_df["제품판매수량"].max() * 1.2],
+                ),
+                xaxis_title=None,
+                height=420,
+                margin=dict(t=50, b=10, l=10, r=10),
+                legend=dict(
+                    orientation="h",
+                    yanchor="top",
+                    y=-0.25,
+                    xanchor="center",
+                    x=0.5,
+                    title=None,
+                    font=dict(size=10),
+                ),
+            )
+
+            st.plotly_chart(fig3, use_container_width=True)
