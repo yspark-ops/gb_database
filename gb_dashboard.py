@@ -26,12 +26,27 @@ def load_raw_data():
         key = st.secrets["SUPABASE_KEY"]
         supabase: Client = create_client(url, key)
 
-        # 2025년 4월 ~ 2026년 3월 데이터만 fetch
-        # Supabase는 OR 필터가 없으므로 전체 로드 후 Python에서 필터
-        response = supabase.table("출고_RAW").select(
-            "Y, M, 채널명, 제품판매수량"
-        ).execute()
-        return pd.DataFrame(response.data)
+        all_rows = []
+        chunk = 1000
+        offset = 0
+
+        while True:
+            response = supabase.table("출고_RAW").select(
+                "Y, M, 채널명, 제품판매수량"
+            ).range(offset, offset + chunk - 1).execute()
+
+            if not response.data:
+                break
+
+            all_rows.extend(response.data)
+
+            if len(response.data) < chunk:
+                break  # 마지막 페이지
+
+            offset += chunk
+
+        return pd.DataFrame(all_rows)
+
     except Exception as e:
         st.error(f"데이터 로드 실패: {e}")
         return pd.DataFrame()
