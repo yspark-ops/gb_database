@@ -17,7 +17,7 @@ h3 { color: #A37F7D !important; font-size: 15px !important; font-weight: 700 !im
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────
-# 2. Supabase 데이터 로드
+# 2. Supabase 데이터 로드 (페이지네이션)
 # ─────────────────────────────────────────
 @st.cache_data(ttl=60)
 def load_raw_data():
@@ -41,7 +41,7 @@ def load_raw_data():
             all_rows.extend(response.data)
 
             if len(response.data) < chunk:
-                break  # 마지막 페이지
+                break
 
             offset += chunk
 
@@ -62,7 +62,13 @@ def preprocess(df):
 
     df["Y"] = pd.to_numeric(df["Y"], errors="coerce")
     df["M"] = pd.to_numeric(df["M"], errors="coerce")
-    df["제품판매수량"] = pd.to_numeric(df["제품판매수량"], errors="coerce").fillna(0)
+    df["제품판매수량"] = (
+        df["제품판매수량"]
+        .astype(str)
+        .str.replace(",", "", regex=False)  # "1,000" → "1000"
+        .pipe(pd.to_numeric, errors="coerce")
+        .fillna(0)
+    )
 
     # 2025년 4월 ~ 2026년 3월 필터
     mask = (
@@ -71,10 +77,13 @@ def preprocess(df):
     )
     df = df[mask].copy()
 
-    # 월 레이블: "25.04", "25.05" ... "26.03"
-    df["월_label"] = df["Y"].astype(str).str[-2:] + "." + df["M"].astype(int).astype(str).str.zfill(2)
+    # 월 레이블: "25.04" ~ "26.03"
+    df["월_label"] = (
+        df["Y"].astype(int).astype(str).str[-2:] + "." +
+        df["M"].astype(int).astype(str).str.zfill(2)
+    )
 
-    # 정렬키: 연도*100 + 월
+    # 정렬키
     df["sort_key"] = df["Y"] * 100 + df["M"]
 
     return df
@@ -88,7 +97,7 @@ st.markdown('<h1 style="font-size:24px;">📦 hince Sell-in Dashboard</h1>', uns
 st.markdown("---")
 
 # ─────────────────────────────────────────
-# 5. 그래프 영역 (3열 레이아웃 준비)
+# 5. 그래프 영역 (3열 레이아웃)
 # ─────────────────────────────────────────
 col1, col2, col3 = st.columns(3)
 
@@ -107,7 +116,7 @@ with col1:
             .sort_values("sort_key")
         )
 
-        # x축 순서 고정 리스트
+        # x축 순서 고정
         month_order = (
             chart_df[["sort_key", "월_label"]]
             .drop_duplicates()
@@ -130,7 +139,7 @@ with col1:
             color="채널명",
             color_discrete_sequence=px.colors.qualitative.Pastel
                                    + px.colors.qualitative.Set3,
-            category_orders={"월_label": month_order},  # ✅ 순서 고정
+            category_orders={"월_label": month_order},
         )
 
         fig.update_traces(textposition="none")
@@ -142,22 +151,31 @@ with col1:
                 y=row["제품판매수량"],
                 text=f"<b>{int(row['제품판매수량']):,}</b>",
                 showarrow=False,
-                yshift=10,
+                yshift=14,
                 font=dict(size=11, color="#333333"),
+                bgcolor="rgba(255,255,255,0.7)",
+                borderpad=2,
             )
 
         fig.update_layout(
             plot_bgcolor="rgba(0,0,0,0)",
             paper_bgcolor="rgba(0,0,0,0)",
             xaxis=dict(
-                type="category",       # ✅ 숫자가 아닌 카테고리로 강제 지정
+                type="category",
                 categoryorder="array",
                 categoryarray=month_order,
+                tickfont=dict(size=11),
+                range=[-0.5, len(month_order) - 0.5],  # 양쪽 여백 균등
+            ),
+            yaxis=dict(
+                title=None,
+                tickformat=",",
             ),
             xaxis_title=None,
-            yaxis_title="출고 수량",
             height=420,
-            margin=dict(t=40, b=10),
+            margin=dict(t=50, b=10, l=10, r=10),
+            bargap=0.3,
+            bargroupgap=0.0,
             legend=dict(
                 orientation="h",
                 yanchor="top",
@@ -167,7 +185,6 @@ with col1:
                 title=None,
                 font=dict(size=10),
             ),
-            bargap=0.2,
         )
 
         st.plotly_chart(fig, use_container_width=True)
