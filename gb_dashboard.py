@@ -487,7 +487,6 @@ with col3:
 # 7. 월별 요약 표 (그래프 아래)
 # ─────────────────────────────────────────
 if not df.empty:
-    # 월별 집계 (FOC 제외)
     summary = (
         df[df["FOC"] != "Y"]
         .groupby(["sort_key", "월_label"])
@@ -499,7 +498,6 @@ if not df.empty:
         .sort_values("sort_key")
     )
 
-    # 표 HTML 생성
     rows_html = ""
     for _, row in summary.iterrows():
         rows_html += f"""
@@ -510,24 +508,52 @@ if not df.empty:
         </tr>
         """
 
-    st.markdown(f"""
-    <div style="margin-top: 8px;">
-        <table class="summary-table">
-            <thead>
-                <tr>
-                    <th>월</th>
-                    <th>출고량 (FOC 제외)</th>
-                    <th>매출액 (FOC 제외)</th>
-                </tr>
-            </thead>
-            <tbody>
-                {rows_html}
-            </tbody>
-        </table>
-    </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("<br>", unsafe_allow_html=True)
+    components.html(f"""
+    <!DOCTYPE html><html><head>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        * {{ font-family: 'Inter', sans-serif; box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{ background: transparent; padding: 4px 0; }}
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }}
+        th {{
+            background: #F5F0EF;
+            color: #A37F7D;
+            font-weight: 600;
+            padding: 8px 12px;
+            text-align: center;
+            border-bottom: 2px solid #E8E0DF;
+        }}
+        td {{
+            padding: 7px 12px;
+            text-align: center;
+            border-bottom: 1px solid #F3F4F6;
+            color: #374151;
+            font-weight: 500;
+        }}
+        tr:last-child td {{ border-bottom: none; }}
+        tr:hover td {{ background: #FAF7F7; }}
+        td:first-child {{ font-weight: 700; color: #A37F7D; }}
+        td:nth-child(3) {{ color: #1F2937; font-weight: 600; }}
+    </style>
+    </head><body>
+    <table>
+        <thead>
+            <tr>
+                <th>월</th>
+                <th>출고량 (FOC 제외)</th>
+                <th>매출액 (FOC 제외)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {rows_html}
+        </tbody>
+    </table>
+    </body></html>
+    """, height=60 + len(summary) * 34)
 
 # ─────────────────────────────────────────
 # 8. Top Selling SKU 테이블 (최근 3개월, FOC 제외)
