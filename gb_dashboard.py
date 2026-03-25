@@ -202,11 +202,11 @@ if not df.empty:
             <div class="kpi-card">
                 <div class="kpi-month">📆 {label}</div>
                 <div class="kpi-row">
-                    <span class="kpi-label">매출액 (FOC 제외)</span>
+                    <span class="kpi-label">매출액</span>
                     <span class="kpi-value-highlight">₩{int(rev):,}</span>
                 </div>
                 <div class="kpi-row">
-                    <span class="kpi-label">총 출고량 (FOC 제외)</span>
+                    <span class="kpi-label">총 출고량</span>
                     <span class="kpi-value">{int(total_qty):,} 개</span>
                 </div>
                 <div class="kpi-row">
