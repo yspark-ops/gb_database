@@ -28,6 +28,31 @@ h3 {
     font-weight: 600 !important;
     margin-bottom: 8px !important;
 }
+/* 월별 요약 테이블 */
+.summary-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-top: 8px;
+}
+.summary-table th {
+    background: #F5F0EF;
+    color: #A37F7D;
+    font-weight: 600;
+    padding: 7px 10px;
+    text-align: center;
+    border-bottom: 2px solid #E8E0DF;
+}
+.summary-table td {
+    padding: 6px 10px;
+    text-align: center;
+    border-bottom: 1px solid #F3F4F6;
+    color: #374151;
+    font-weight: 500;
+}
+.summary-table tr:last-child td { border-bottom: none; }
+.summary-table tr:hover td { background: #FAF7F7; }
+.summary-table td:first-child { font-weight: 700; color: #A37F7D; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -170,9 +195,7 @@ if not df.empty:
 
         with col:
             components.html(f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
+            <!DOCTYPE html><html><head>
             <style>
                 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
                 * {{ font-family: 'Inter', sans-serif; box-sizing: border-box; margin: 0; padding: 0; }}
@@ -184,39 +207,14 @@ if not df.empty:
                     box-shadow: 0 2px 12px rgba(0,0,0,0.07);
                     border: 1px solid #F0EDED;
                 }}
-                .kpi-month {{
-                    color: #A37F7D;
-                    font-size: 15px;
-                    font-weight: 700;
-                    margin-bottom: 14px;
-                    text-align: center;
-                }}
-                .kpi-row {{
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    padding: 9px 0;
-                    border-bottom: 1px solid #F3F4F6;
-                }}
+                .kpi-month {{ color: #A37F7D; font-size: 15px; font-weight: 700; margin-bottom: 14px; text-align: center; }}
+                .kpi-row {{ display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid #F3F4F6; }}
                 .kpi-row:last-child {{ border-bottom: none; }}
-                .kpi-label {{
-                    color: #9CA3AF;
-                    font-size: 12px;
-                    font-weight: 500;
-                }}
-                .kpi-value {{
-                    color: #1F2937;
-                    font-size: 16px;
-                    font-weight: 700;
-                }}
-                .kpi-value-highlight {{
-                    color: #A37F7D;
-                    font-size: 20px;
-                    font-weight: 700;
-                }}
+                .kpi-label {{ color: #9CA3AF; font-size: 12px; font-weight: 500; }}
+                .kpi-value {{ color: #1F2937; font-size: 16px; font-weight: 700; }}
+                .kpi-value-highlight {{ color: #A37F7D; font-size: 20px; font-weight: 700; }}
             </style>
-            </head>
-            <body>
+            </head><body>
             <div class="kpi-card">
                 <div class="kpi-month">📆 {label}</div>
                 <div class="kpi-row">
@@ -240,8 +238,7 @@ if not df.empty:
                     <span class="kpi-value">₩{int(avg_rev):,}</span>
                 </div>
             </div>
-            </body>
-            </html>
+            </body></html>
             """, height=290)
 
 st.markdown("<br>", unsafe_allow_html=True)
@@ -444,10 +441,7 @@ with col3:
                 category_orders={"분기_label": q_order},
             )
 
-            fig3.update_traces(
-                line=dict(width=2.5),
-                marker=dict(size=8),
-            )
+            fig3.update_traces(line=dict(width=2.5), marker=dict(size=8))
 
             for _, row in line_df.iterrows():
                 fig3.add_annotation(
@@ -490,7 +484,53 @@ with col3:
             st.plotly_chart(fig3, use_container_width=True)
 
 # ─────────────────────────────────────────
-# 7. Top Selling SKU 테이블 (최근 3개월, FOC 제외)
+# 7. 월별 요약 표 (그래프 아래)
+# ─────────────────────────────────────────
+if not df.empty:
+    # 월별 집계 (FOC 제외)
+    summary = (
+        df[df["FOC"] != "Y"]
+        .groupby(["sort_key", "월_label"])
+        .agg(
+            출고량=("제품판매수량", "sum"),
+            매출액=("매출액_num", "sum"),
+        )
+        .reset_index()
+        .sort_values("sort_key")
+    )
+
+    # 표 HTML 생성
+    rows_html = ""
+    for _, row in summary.iterrows():
+        rows_html += f"""
+        <tr>
+            <td>{row['월_label']}</td>
+            <td>{int(row['출고량']):,}</td>
+            <td>₩{int(row['매출액']):,}</td>
+        </tr>
+        """
+
+    st.markdown(f"""
+    <div style="margin-top: 8px;">
+        <table class="summary-table">
+            <thead>
+                <tr>
+                    <th>월</th>
+                    <th>출고량 (FOC 제외)</th>
+                    <th>매출액 (FOC 제외)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {rows_html}
+            </tbody>
+        </table>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────
+# 8. Top Selling SKU 테이블 (최근 3개월, FOC 제외)
 # ─────────────────────────────────────────
 st.markdown("---")
 st.markdown('<div class="section-title">🏆 Top Selling SKU — 최근 3개월 (2026.01 ~ 2026.03)</div>', unsafe_allow_html=True)
