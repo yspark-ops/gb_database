@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit.components.v1 as components
 from supabase import create_client, Client
+from datetime import date
 
 # ─────────────────────────────────────────
 # 1. 페이지 설정 & 스타일
@@ -32,7 +33,38 @@ h3 {
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────
-# 2. Supabase 데이터 로드 (페이지네이션)
+# 2. 날짜 범위 자동 계산
+# ─────────────────────────────────────────
+today      = date.today()
+end_y      = today.year
+end_m      = today.month
+
+# 최근 12개월 시작점
+start_m = end_m - 11
+start_y = end_y
+if start_m <= 0:
+    start_m += 12
+    start_y -= 1
+
+end_ym   = end_y * 100 + end_m
+start_ym = start_y * 100 + start_m
+
+# 최근 3개월 (KPI 카드용)
+recent_3 = []
+y, m = end_y, end_m
+for _ in range(3):
+    recent_3.insert(0, (y, m, f"{y}년 {m}월"))
+    m -= 1
+    if m == 0:
+        m = 12
+        y -= 1
+
+# 헤더 서브타이틀용 레이블
+start_label = f"{str(start_y)[-2:]}.{str(start_m).zfill(2)}"
+end_label   = f"{str(end_y)[-2:]}.{str(end_m).zfill(2)}"
+
+# ─────────────────────────────────────────
+# 3. Supabase 데이터 로드 (페이지네이션)
 # ─────────────────────────────────────────
 @st.cache_data(ttl=60)
 def load_raw_data():
@@ -69,7 +101,7 @@ def load_raw_data():
 df_raw = load_raw_data()
 
 # ─────────────────────────────────────────
-# 3. 전처리
+# 4. 전처리
 # ─────────────────────────────────────────
 def get_quarter(m):
     if m <= 3:   return "1Q"
@@ -101,11 +133,9 @@ def preprocess(df):
         .fillna(0)
     )
 
-    mask = (
-        ((df["Y"] == 2025) & (df["M"] >= 4)) |
-        ((df["Y"] == 2026) & (df["M"] <= 3))
-    )
-    df = df[mask].copy()
+    # ✅ 동적 12개월 필터
+    df["ym"] = df["Y"] * 100 + df["M"]
+    df = df[(df["ym"] >= start_ym) & (df["ym"] <= end_ym)].drop(columns=["ym"]).copy()
 
     df["월_label"] = (
         df["Y"].astype(int).astype(str).str[-2:] + "." +
@@ -123,7 +153,7 @@ def preprocess(df):
         df["M"].astype(int).apply(get_quarter).map(quarter_num)
     )
 
-    # 소 컬럼 정제: 공백 제거 + 로글로우젤틴트 → 젤틴트 통일
+    # 소 컬럼 정제
     if "소" in df.columns:
         df["소_정제"] = (
             df["소"]
@@ -137,19 +167,19 @@ def preprocess(df):
 df = preprocess(df_raw)
 
 # ─────────────────────────────────────────
-# 4. 헤더 (로고 + 타이틀)
+# 5. 헤더 (로고 + 타이틀)
 # ─────────────────────────────────────────
 logo_col, title_col = st.columns([1, 9])
 with logo_col:
     st.image("hince.png", width=120)
 with title_col:
-    st.markdown("""
+    st.markdown(f"""
     <div style="padding-top: 10px;">
         <div style="font-size:28px; font-weight:700; color:#2D2D2D; letter-spacing:-0.5px;">
             hince Global Dashboard
         </div>
         <div style="font-size:13px; color:#A37F7D; font-weight:500; margin-top:4px;">
-            Sell-in Performance · 2025.04 – 2026.03
+            Sell-in Performance · {start_label} – {end_label}
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -157,15 +187,14 @@ with title_col:
 st.markdown("---")
 
 # ─────────────────────────────────────────
-# 5. 2026 월별 KPI 카드 (1~3월)
+# 6. 월별 KPI 카드 (최근 3개월 자동)
 # ─────────────────────────────────────────
-st.markdown('<div class="section-title">📅 2026 월별 주요 지표</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">📅 최근 3개월 주요 지표</div>', unsafe_allow_html=True)
 
 if not df.empty:
-    kpi_months = [(2026, 1, "2026년 1월"), (2026, 2, "2026년 2월"), (2026, 3, "2026년 3월")]
     kpi_cols = st.columns(3)
 
-    for col, (y, m, label) in zip(kpi_cols, kpi_months):
+    for col, (y, m, label) in zip(kpi_cols, recent_3):
         m_df = df[(df["Y"] == y) & (df["M"] == m)]
 
         non_foc = m_df[m_df["FOC"] != "Y"]
@@ -202,11 +231,11 @@ if not df.empty:
             <div class="kpi-card">
                 <div class="kpi-month">📆 {label}</div>
                 <div class="kpi-row">
-                    <span class="kpi-label">매출액</span>
+                    <span class="kpi-label">매출액 (FOC 제외)</span>
                     <span class="kpi-value-highlight">₩{int(rev):,}</span>
                 </div>
                 <div class="kpi-row">
-                    <span class="kpi-label">총 출고량</span>
+                    <span class="kpi-label">총 출고량 (FOC 제외)</span>
                     <span class="kpi-value">{int(total_qty):,} 개</span>
                 </div>
                 <div class="kpi-row">
@@ -229,7 +258,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 st.markdown("---")
 
 # ─────────────────────────────────────────
-# 6. 그래프 영역 (3열 레이아웃)
+# 7. 그래프 영역 (3열 레이아웃)
 # ─────────────────────────────────────────
 st.markdown('<div class="section-title">📊 Sell-in 트렌드 분석</div>', unsafe_allow_html=True)
 col1, col2, col3 = st.columns(3)
@@ -468,7 +497,7 @@ with col3:
             st.plotly_chart(fig3, use_container_width=True)
 
 # ─────────────────────────────────────────
-# 7. 월별 요약 표 (그래프 아래)
+# 8. 월별 요약 표 (그래프 아래)
 # ─────────────────────────────────────────
 if not df.empty:
     summary = (
@@ -534,25 +563,34 @@ if not df.empty:
     """, height=60 + len(summary) * 34)
 
 # ─────────────────────────────────────────
-# 8. Top Selling SKU 테이블 (최근 3개월, FOC+매출0 제외)
+# 9. Top Selling SKU (최근 3개월 자동, FOC+매출0 제외)
 # ─────────────────────────────────────────
 st.markdown("---")
-st.markdown('<div class="section-title">🏆 Top Selling SKU — 최근 3개월 (2026.01 ~ 2026.03)</div>', unsafe_allow_html=True)
+
+# 최근 3개월 레이블 (타이틀용)
+r3_labels = " ~ ".join([
+    f"{str(recent_3[0][0])[-2:]}.{str(recent_3[0][1]).zfill(2)}",
+    f"{str(recent_3[-1][0])[-2:]}.{str(recent_3[-1][1]).zfill(2)}"
+])
+st.markdown(f'<div class="section-title">🏆 Top Selling SKU — 최근 3개월 ({r3_labels})</div>', unsafe_allow_html=True)
 
 if df.empty:
     st.info("데이터 없음")
 else:
+    # 최근 3개월 범위 필터
+    r3_start_ym = recent_3[0][0] * 100 + recent_3[0][1]
+    r3_end_ym   = recent_3[-1][0] * 100 + recent_3[-1][1]
+
     sku_df = df[
-        (df["Y"] == 2026) &
-        (df["M"] <= 3) &
+        (df["sort_key"] >= r3_start_ym) &
+        (df["sort_key"] <= r3_end_ym) &
         (df["FOC"] != "Y") &
-        (df["매출액_num"] > 0)          # ✅ 매출액 0 제외
+        (df["매출액_num"] > 0)
     ].copy()
 
     if sku_df.empty:
         st.info("최근 3개월 데이터 없음")
     else:
-        # 소_정제 기준 집계 (없으면 소 원본 사용)
         group_col = "소_정제" if "소_정제" in sku_df.columns else "소"
 
         sku_table = (
@@ -577,7 +615,7 @@ else:
 
         sku_display = sku_table.copy()
         sku_display["총_출고수량"] = sku_display["총_출고수량"].apply(lambda x: f"{int(x):,}")
-        sku_display["총_매출액"] = sku_display["총_매출액"].apply(lambda x: f"₩{int(x):,}")
+        sku_display["총_매출액"]   = sku_display["총_매출액"].apply(lambda x: f"₩{int(x):,}")
         sku_display.columns = ["순위", "품목명", "출고 수량", "매출액 (원화)"]
 
         st.dataframe(
