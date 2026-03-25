@@ -28,31 +28,6 @@ h3 {
     font-weight: 600 !important;
     margin-bottom: 8px !important;
 }
-/* 월별 요약 테이블 */
-.summary-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-    margin-top: 8px;
-}
-.summary-table th {
-    background: #F5F0EF;
-    color: #A37F7D;
-    font-weight: 600;
-    padding: 7px 10px;
-    text-align: center;
-    border-bottom: 2px solid #E8E0DF;
-}
-.summary-table td {
-    padding: 6px 10px;
-    text-align: center;
-    border-bottom: 1px solid #F3F4F6;
-    color: #374151;
-    font-weight: 500;
-}
-.summary-table tr:last-child td { border-bottom: none; }
-.summary-table tr:hover td { background: #FAF7F7; }
-.summary-table td:first-child { font-weight: 700; color: #A37F7D; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -72,7 +47,7 @@ def load_raw_data():
 
         while True:
             response = supabase.table("출고_RAW").select(
-                'Y, M, 채널명, 제품판매수량, "매출취합용_공급가액(원화기준)", 중, 제품명, FOC'
+                'Y, M, 채널명, 제품판매수량, "매출취합용_공급가액(원화기준)", 중, 제품명, FOC, 소'
             ).range(offset, offset + chunk - 1).execute()
 
             if not response.data:
@@ -147,6 +122,15 @@ def preprocess(df):
         df["Y"] * 10 +
         df["M"].astype(int).apply(get_quarter).map(quarter_num)
     )
+
+    # 소 컬럼 정제: 공백 제거 + 로글로우젤틴트 → 젤틴트 통일
+    if "소" in df.columns:
+        df["소_정제"] = (
+            df["소"]
+            .astype(str)
+            .str.strip()
+            .replace("로글로우젤틴트", "젤틴트")
+        )
 
     return df
 
@@ -514,11 +498,7 @@ if not df.empty:
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         * {{ font-family: 'Inter', sans-serif; box-sizing: border-box; margin: 0; padding: 0; }}
         body {{ background: transparent; padding: 4px 0; }}
-        table {{
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 12px;
-        }}
+        table {{ width: 100%; border-collapse: collapse; font-size: 12px; }}
         th {{
             background: #F5F0EF;
             color: #A37F7D;
@@ -548,15 +528,13 @@ if not df.empty:
                 <th>매출액 (FOC 제외)</th>
             </tr>
         </thead>
-        <tbody>
-            {rows_html}
-        </tbody>
+        <tbody>{rows_html}</tbody>
     </table>
     </body></html>
     """, height=60 + len(summary) * 34)
 
 # ─────────────────────────────────────────
-# 8. Top Selling SKU 테이블 (최근 3개월, FOC 제외)
+# 8. Top Selling SKU 테이블 (최근 3개월, FOC+매출0 제외)
 # ─────────────────────────────────────────
 st.markdown("---")
 st.markdown('<div class="section-title">🏆 Top Selling SKU — 최근 3개월 (2026.01 ~ 2026.03)</div>', unsafe_allow_html=True)
@@ -565,14 +543,26 @@ if df.empty:
     st.info("데이터 없음")
 else:
     sku_df = df[
-        (df["Y"] == 2026) & (df["M"] <= 3) & (df["FOC"] != "Y")
+        (df["Y"] == 2026) &
+        (df["M"] <= 3) &
+        (df["FOC"] != "Y") &
+        (df["매출액_num"] > 0)          # ✅ 매출액 0 제외
     ].copy()
 
     if sku_df.empty:
         st.info("최근 3개월 데이터 없음")
     else:
+        # 소_정제 기준 집계 (없으면 소 원본 사용)
+        group_col = "소_정제" if "소_정제" in sku_df.columns else "소"
+
         sku_table = (
-            sku_df.groupby("제품명")
+            sku_df[
+                sku_df[group_col].notna() &
+                (sku_df[group_col] != "-") &
+                (sku_df[group_col] != "#N/A") &
+                (sku_df[group_col] != "nan")
+            ]
+            .groupby(group_col)
             .agg(
                 총_출고수량=("제품판매수량", "sum"),
                 총_매출액=("매출액_num", "sum"),
@@ -588,7 +578,7 @@ else:
         sku_display = sku_table.copy()
         sku_display["총_출고수량"] = sku_display["총_출고수량"].apply(lambda x: f"{int(x):,}")
         sku_display["총_매출액"] = sku_display["총_매출액"].apply(lambda x: f"₩{int(x):,}")
-        sku_display.columns = ["순위", "제품명", "출고 수량", "매출액 (원화)"]
+        sku_display.columns = ["순위", "품목명", "출고 수량", "매출액 (원화)"]
 
         st.dataframe(
             sku_display,
